@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>The hero is already on the way</title> <!-- НОВОЕ НАЗВАНИЕ -->
+    <style>
+        body {
+            margin: 0; padding: 0;
+            background-color: #0d1616;
+            display: flex; justify-content: center; align-items: center;
+            height: 100vh; color: white;
+            font-family: 'Courier New', Courier, monospace;
+            overflow: hidden;
+        }
+        canvas {
+            border: none;
+            background-color: #000;
+            image-rendering: pixelated;
+            width: 100%;
+            height: 100%;
+            max-width: 1000px;
+            max-height: 600px;
+        }
+    </style>
+</head>
+<body>
+
+<canvas id="gameCanvas" width="1000" height="600"></canvas>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = false; 
+
+    // --- ЗАГРУЗКА КАРТИНОК ---
+    const bgImages = { 1: new Image(), 2: new Image(), 3: new Image() };
+    bgImages[1].src = 'forest.jpeg';
+    bgImages[2].src = 'castl.jpeg';
+    bgImages[3].src = 'dang.jpeg';
+
+    // Встроенная процедурная плитка: игра больше не зависит от отдельного файла текстуры.
+    const tileset = document.createElement('canvas');
+    tileset.width = 120;
+    tileset.height = 530;
+    const tileCtx = tileset.getContext('2d');
+    tileCtx.fillStyle = '#324b43';
+    tileCtx.fillRect(10, 480, 50, 50);
+    tileCtx.fillStyle = '#5f8d69';
+    tileCtx.fillRect(10, 480, 50, 8);
+    tileCtx.fillStyle = '#233a35';
+    tileCtx.fillRect(65, 480, 50, 50);
+    tileCtx.fillStyle = 'rgba(255,255,255,.08)';
+    for (let y = 486; y < 530; y += 10) tileCtx.fillRect(65, y, 50, 2);
+    const tilesetLoaded = true;
+
+    let assetsLoaded = false;
+    let loadedCount = 0;
+
+    for (let key in bgImages) {
+        bgImages[key].onload = () => { loadedCount++; if (loadedCount === 3) assetsLoaded = true; };
+        bgImages[key].onerror = () => { loadedCount++; if (loadedCount === 3) assetsLoaded = true; };
+    }
+
+    // --- УПРАВЛЕНИЕ ---
+    const keys = { right: false, left: false, up: false, attack: false, shoot: false };
+    
+    window.addEventListener('keydown', (e) => {
+        // ВЫХОД В МЕНЮ ПО ESC
+        if (e.code === 'Escape') {
+            if (window.parent && window.parent.closeGame) {
+                window.parent.closeGame(); 
+            }
+            return;
+        }
+
+        if (e.code === 'ArrowRight' || e.code === 'KeyD') keys.right = true;
+        if (e.code === 'ArrowLeft' || e.code === 'KeyA') keys.left = true;
+        if (e.code === 'ArrowUp' || e.code === 'KeyW' || e.code === 'Space') keys.up = true;
+        if (e.code === 'KeyJ') keys.attack = true;
+        if (e.code === 'KeyK') keys.shoot = true;
+        
+        if (e.code === 'Space' && (gameState === 'INTRO' || gameState === 'OUTRO')) {
+            if (gameState === 'INTRO') {
+                gameState = 'PLAYING';
+                currentLevel = 1;
+                loadLevel(1);
+            } else {
+                gameState = 'INTRO';
+                typeIndex = 0;
+                player.reset();
+            }
+        }
+    });
+
+    window.addEventListener('keyup', (e) => {
+        if (e.code === 'ArrowRight' || e.code === 'KeyD') keys.right = false;
+        if (e.code === 'ArrowLeft' || e.code === 'KeyA') keys.left = false;
+        if (e.code === 'ArrowUp' || e.code === 'KeyW' || e.code === 'Space') keys.up = false;
+        if (e.code === 'KeyJ') keys.attack = false;
+        if (e.code === 'KeyK') keys.shoot = false;
+    });
+
+    // --- СЮЖЕТ ---
+    const introText = "Давным-давно в далекой-далекой галактике жил добрый молодец и была у него жена-красавица, его сокровище. И любил он ее, и баловал. Но в один день припрется дракон-развратник да и утомил силою красну девицу. Наш герой не растерялся, взяв меч верный, отправился в путь для спасения своей возлюбленной.\n\n(Нажмите ПРОБЕЛ, чтобы начать путь)";
+    const outroText = "И жили они долго и счастливо. Конец.\n\n(Нажмите ПРОБЕЛ, чтобы сыграть снова)";
+    let typedText = "";
+    let typeIndex = 0;
+
+    // --- ИГРОВЫЕ ПЕРЕМЕННЫЕ ---
+    const GRAVITY = 0.6;
+    const JUMP_FORCE = -13;
+    const SPEED = 6;
+    const TILE_SIZE = 50;
+
+    let gameState = 'INTRO'; 
+    let currentLevel = 1;
+    let levelWidth = 0; 
+    let camera = { x: 0 };
+
+    // --- ИГРОК ---
+    const player = {
+        x: 50, y: 400, w: 30, h: 40,
+        vx: 0, vy: 0, facing: 1,
+        isGrounded: false, attackTimer: 0, shootTimer: 0,
+        hp: 5,
+        reset() {
+            this.x = 50; this.y = 400; this.vx = 0; this.vy = 0;
+            this.hp = 5; this.attackTimer = 0; this.shootTimer = 0;
+        },
+        update() {
+            if (this.hp <= 0) { 
+                gameState = 'INTRO'; 
+                typeIndex = 0;
+                this.reset(); 
+                return; 
+            }
+
+            if (keys.left) { this.vx = -SPEED; this.facing = -1; }
+            else if (keys.right) { this.vx = SPEED; this.facing = 1; }
+            else this.vx = 0;
+
+            if (keys.up && this.isGrounded) { this.vy = JUMP_FORCE; this.isGrounded = false; }
+
+            if (keys.attack && this.attackTimer <= 0) this.attackTimer = 15;
+            if (keys.shoot && this.shootTimer <= 0) {
+                this.shootTimer = 30;
+                playerProjectiles.push({ x: this.x + this.w/2, y: this.y + this.h/2, vx: this.facing * 12, w: 15, h: 5 });
+            }
+            if (this.attackTimer > 0) this.attackTimer--;
+            if (this.shootTimer > 0) this.shootTimer--;
+
+            this.vy += GRAVITY;
+            this.x += this.vx;
+            this.y += this.vy;
+
+            this.isGrounded = false;
+            for (let p of currentPlatforms) {
+                if (this.x < p.x + p.w && this.x + this.w > p.x &&
+                    this.y + this.h > p.y && this.y + this.h < p.y + p.h + this.vy) {
+                    if (this.vy > 0) {
+                        this.y = p.y - this.h;
+                        this.vy = 0;
+                        this.isGrounded = true;
+                    }
+                }
+            }
+            if (this.x < 0) this.x = 0;
+
+            if (this.x > levelWidth - 100) {
+                if (currentLevel < 3) {
+                    currentLevel++;
+                    this.x = 50;
+                    loadLevel(currentLevel);
+                } else if (currentLevel === 3 && dragon && !dragon.alive) {
+                    gameState = 'OUTRO';
+                    typeIndex = 0;
+                }
+            }
+        },
+        draw() {
+            ctx.fillStyle = '#00ffff';
+            ctx.fillRect(this.x, this.y, this.w, this.h);
+            ctx.fillStyle = '#000';
+            ctx.fillRect(this.x + (this.facing === 1 ? 20 : 5), this.y + 10, 5, 5);
+
+            if (this.attackTimer > 0) {
+                ctx.fillStyle = '#ffffff';
+                let swordX = this.facing === 1 ? this.x + this.w : this.x - 40;
+                ctx.fillRect(swordX, this.y + 10, 40, 8);
+            }
+        }
+    };
+
+    let currentPlatforms = [];
+    let enemies = [];
+    let playerProjectiles = [];
+    let enemyProjectiles = [];
+    let dragon = null;
+
+    // --- ГЕНЕРАЦИЯ УРОВНЕЙ ---
+    function loadLevel(level) {
+        playerProjectiles = []; enemyProjectiles = []; enemies = []; dragon = null;
+        levelWidth = bgImages[level].width > 0 ? bgImages[level].width : 3000;
+        
+        currentPlatforms = [ { x: 0, y: 550, w: levelWidth, h: 50 } ];
+
+        for (let i = 1; i < levelWidth / 500; i++) {
+            currentPlatforms.push({ x: i * 500, y: 400 + Math.random() * 100, w: 200, h: 20 });
+        }
+
+        if (level === 1) {
+            for (let i = 1; i < levelWidth / 400; i++) {
+                enemies.push({ x: i * 400 + Math.random()*200, y: 510, w: 30, h: 40, vx: -2, type: 'zombie', hp: 2, alive: true });
+            }
+        } 
+        else if (level === 2) {
+            for (let i = 1; i < levelWidth / 500; i++) {
+                if (i % 2 === 0) {
+                    enemies.push({ x: i * 500, y: 510, w: 30, h: 40, vx: -2, type: 'zombie', hp: 2, alive: true });
+                } else {
+                    enemies.push({ x: i * 500, y: 510, w: 30, h: 40, vx: 0, type: 'skeleton', hp: 1, alive: true, timer: 0 });
+                }
+            }
+        }
+        else if (level === 3) {
+            dragon = { x: levelWidth - 400, y: 350, w: 120, h: 200, hp: 10, maxHp: 10, timer: 0, alive: true };
+            enemies.push({ x: 600, y: 510, w: 30, h: 40, vx: -2, type: 'zombie', hp: 2, alive: true });
+            enemies.push({ x: 1200, y: 510, w: 30, h: 40, vx: -2, type: 'zombie', hp: 2, alive: true });
+        }
+    }
+
+    // --- ЛОГИКА ---
+    function update() {
+        if (gameState === 'INTRO' || gameState === 'OUTRO') {
+            if (typeIndex < (gameState === 'INTRO' ? introText.length : outroText.length)) typeIndex += 0.5;
+            typedText = (gameState === 'INTRO' ? introText : outroText).substring(0, Math.floor(typeIndex));
+            return;
+        }
+        if (gameState !== 'PLAYING') return;
+
+        player.update();
+        camera.x = Math.max(0, Math.min(player.x - 300, levelWidth - canvas.width));
+
+        for (let e of enemies) {
+            if (!e.alive) continue;
+            if (e.type === 'zombie') {
+                if (Math.abs(player.x - e.x) < 400) e.x += (player.x < e.x ? -Math.abs(e.vx) : Math.abs(e.vx));
+            }
+            if (e.type === 'skeleton') {
+                e.timer++;
+                if (e.timer > 90 && Math.abs(player.x - e.x) < 600) {
+                    let dir = player.x < e.x ? -1 : 1;
+                    enemyProjectiles.push({ x: e.x + e.w/2, y: e.y + e.h/2, vx: dir * 6, w: 10, h: 10 });
+                    e.timer = 0;
+                }
+            }
+
+            if (player.x < e.x + e.w && player.x + player.w > e.x && player.y < e.y + e.h && player.y + player.h > e.y) {
+                if (player.vy > 0 && player.y < e.y) {
+                    e.hp -= 1; if (e.hp <= 0) e.alive = false;
+                    player.vy = JUMP_FORCE * 0.8;
+                } else {
+                    player.hp -= 0.1; player.x -= player.facing * 5;
+                }
+            }
+
+            if (player.attackTimer > 0) {
+                let swordX = player.facing === 1 ? player.x + player.w : player.x - 40;
+                if (swordX < e.x + e.w && swordX + 40 > e.x && player.y + 10 < e.y + e.h && player.y + 18 > e.y) {
+                    e.hp -= 1; if (e.hp <= 0) e.alive = false;
+                }
+            }
+        }
+        enemies = enemies.filter(e => e.alive);
+
+        for (let i = playerProjectiles.length - 1; i >= 0; i--) {
+            let p = playerProjectiles[i]; p.x += p.vx;
+            if (p.x < camera.x - 100 || p.x > camera.x + 1100) { playerProjectiles.splice(i, 1); continue; }
+            for (let e of enemies) {
+                if (p.x < e.x + e.w && p.x + p.w > e.x && p.y < e.y + e.h && p.y + p.h > e.y) {
+                    e.hp -= 1; playerProjectiles.splice(i, 1); break;
+                }
+            }
+        }
+
+        for (let i = enemyProjectiles.length - 1; i >= 0; i--) {
+            let p = enemyProjectiles[i]; p.x += p.vx;
+            if (p.x < camera.x - 100 || p.x > camera.x + 1100) { enemyProjectiles.splice(i, 1); continue; }
+            if (player.x < p.x + p.w && player.x + player.w > p.x && player.y < p.y + p.h && player.y + player.h > p.y) {
+                player.hp -= 1; enemyProjectiles.splice(i, 1);
+            }
+        }
+
+        if (dragon && dragon.alive) {
+            dragon.timer++;
+            if (dragon.timer > 60 && Math.abs(player.x - dragon.x) < 800) {
+                for(let angle = -1; angle <= 1; angle++) {
+                    enemyProjectiles.push({ x: dragon.x, y: dragon.y + 50, vx: -7, vy: angle * 3, w: 20, h: 20, isFire: true });
+                }
+                dragon.timer = 0;
+            }
+            if (player.x < dragon.x + dragon.w && player.x + player.w > dragon.x && player.y < dragon.y + dragon.h && player.y + player.h > dragon.y) {
+                if (player.attackTimer > 0) dragon.hp -= 0.2;
+                player.hp -= 0.05;
+            }
+            if (dragon.hp <= 0) { dragon.alive = false; }
+        }
+    }
+
+    // --- ОТРИСОВКА ---
+    function draw() {
+        ctx.fillStyle = '#000'; 
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        if (gameState === 'INTRO' || gameState === 'OUTRO' || !assetsLoaded) {
+            if (!assetsLoaded) {
+                ctx.fillStyle = '#fff'; ctx.font = '20px Courier New'; ctx.textAlign = 'center';
+                ctx.fillText('Загрузка...', canvas.width/2, canvas.height/2);
+                ctx.textAlign = 'left';
+            } else {
+                drawTextScreen();
+            }
+            return;
+        }
+
+        ctx.save();
+        ctx.translate(-camera.x, 0);
+
+        let bg = bgImages[currentLevel];
+        if (bg && bg.width > 0) {
+            ctx.drawImage(bg, 0, 0, bg.width, bg.height, 0, 0, bg.width, canvas.height);
+        }
+
+        // Отрисовка платформ
+        for (let p of currentPlatforms) {
+            if (tilesetLoaded) {
+                for (let x = p.x; x < p.x + p.w; x += TILE_SIZE) {
+                    let drawW = Math.min(TILE_SIZE, p.x + p.w - x);
+                    let drawH = Math.min(TILE_SIZE, p.h);
+                    ctx.drawImage(tileset, 10, 480, drawW, drawH, x, p.y, drawW, drawH);
+                    
+                    if (p.h > TILE_SIZE) {
+                        for (let y = p.y + TILE_SIZE; y < p.y + p.h; y += TILE_SIZE) {
+                            let hRem = Math.min(TILE_SIZE, p.y + p.h - y);
+                            ctx.drawImage(tileset, 65, 480, drawW, hRem, x, y, drawW, hRem);
+                        }
+                    }
+                }
+            } else {
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+                ctx.fillRect(p.x, p.y, p.w, p.h);
+                ctx.fillStyle = 'rgba(0, 255, 255, 0.3)';
+                ctx.fillRect(p.x, p.y, p.w, 4);
+            }
+        }
+
+        // Враги
+        for (let e of enemies) {
+            if (e.type === 'zombie') {
+                ctx.fillStyle = '#2e8b57'; ctx.fillRect(e.x, e.y, e.w, e.h);
+                ctx.fillStyle = '#ff0000'; ctx.fillRect(e.x + 5, e.y + 10, 5, 5); ctx.fillRect(e.x + 20, e.y + 10, 5, 5);
+            } else {
+                ctx.fillStyle = '#aaaaaa'; ctx.fillRect(e.x, e.y, e.w, e.h);
+                ctx.fillStyle = '#000'; ctx.fillRect(e.x + 5, e.y + 10, 5, 5); ctx.fillRect(e.x + 20, e.y + 10, 5, 5);
+            }
+        }
+
+        // Дракон
+        if (dragon && dragon.alive) {
+            ctx.fillStyle = '#8b0000'; ctx.fillRect(dragon.x, dragon.y, dragon.w, dragon.h);
+            ctx.fillStyle = '#ffff00'; ctx.fillRect(dragon.x + 20, dragon.y + 30, 20, 20); ctx.fillRect(dragon.x + 80, dragon.y + 30, 20, 20);
+            ctx.fillStyle = 'red'; ctx.fillRect(dragon.x, dragon.y - 20, dragon.w, 10);
+            ctx.fillStyle = '#00ff00'; ctx.fillRect(dragon.x, dragon.y - 20, dragon.w * (dragon.hp/dragon.maxHp), 10);
+        }
+
+        // Снаряды
+        ctx.fillStyle = '#00ffff';
+        for (let p of playerProjectiles) ctx.fillRect(p.x, p.y, p.w, p.h);
+        for (let p of enemyProjectiles) {
+            ctx.fillStyle = p.isFire ? '#ff4500' : '#ffffff';
+            ctx.fillRect(p.x, p.y, p.w, p.h);
+        }
+
+        player.draw();
+        ctx.restore();
+
+        // UI
+        ctx.fillStyle = '#ff0000';
+        for (let i = 0; i < Math.ceil(player.hp); i++) {
+            ctx.fillRect(20 + i * 25, 30, 20, 10);
+        }
+        
+        ctx.fillStyle = '#fff'; ctx.font = '14px Courier New';
+        ctx.fillText('A/D - ходьба | Пробел - прыжок | J - Меч | K - Лук | ESC - Выход', 20, canvas.height - 20);
+    }
+
+    function wrapText(text, maxWidth) {
+        const paragraphs = text.split('\n');
+        let allLines = [];
+        for (let p of paragraphs) {
+            if (p === '') { allLines.push(''); continue; }
+            const words = p.split(' ');
+            let currentLine = '';
+            for (let word of words) {
+                const testLine = currentLine === '' ? word : currentLine + ' ' + word;
+                if (ctx.measureText(testLine).width > maxWidth && currentLine !== '') {
+                    allLines.push(currentLine);
+                    currentLine = word;
+                } else {
+                    currentLine = testLine;
+                }
+            }
+            if (currentLine !== '') allLines.push(currentLine);
+        }
+        return allLines;
+    }
+
+    function drawTextScreen() {
+        ctx.fillStyle = '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#00ffff'; ctx.font = '32px Courier New'; ctx.textAlign = 'center';
+        let maxWidth = canvas.width * 0.8;
+        let lines = wrapText(typedText, maxWidth);
+        let lineHeight = 45;
+        let startY = canvas.height / 2 - ((lines.length * lineHeight) / 2) + 20;
+        for (let i = 0; i < lines.length; i++) {
+            ctx.fillText(lines[i], canvas.width / 2, startY + (i * lineHeight));
+        }
+        ctx.textAlign = 'left';
+    }
+
+    // --- ЗАПУСК ---
+    function gameLoop() {
+        update();
+        draw();
+        requestAnimationFrame(gameLoop);
+    }
+    gameLoop();
+</script>
+</body>
+</html>

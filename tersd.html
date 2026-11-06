@@ -1,0 +1,943 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>XMB PSP Style</title>
+<style>
+  /* ========== БАЗОВЫЕ ПЕРЕМЕННЫЕ ========== */
+  :root {
+    --bg: #020611;
+    --accent: #bfe4ff;
+    --accent-glow: rgba(160, 214, 255, 0.85);
+    --dim: rgba(255, 255, 255, 0.42);
+    --dim2: rgba(255, 255, 255, 0.22);
+    --focus-scale: 1.28;
+    --transition: 0.25s cubic-bezier(.22,.9,.32,1);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    width: 100%; height: 100%;
+    background: var(--bg);
+    overflow: hidden;
+    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    color: #fff;
+    user-select: none;
+  }
+
+  #waveCanvas {
+    position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; display: block;
+  }
+  .vignette {
+    position: fixed; inset: 0; z-index: 1; pointer-events: none;
+    background: radial-gradient(ellipse at 50% 30%, transparent 0%, rgba(0,4,12,0.35) 70%, rgba(0,2,8,0.65) 100%);
+  }
+
+  .top-bar {
+    position: fixed; top: 0; right: 0; z-index: 5;
+    display: flex; align-items: center; gap: 18px;
+    padding: clamp(10px, 2vh, 20px) clamp(14px, 3vw, 32px);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.05em;
+  }
+  .clock {
+    font-size: clamp(13px, 1.6vw, 16px);
+    color: var(--accent);
+    text-shadow: 0 0 8px var(--accent-glow);
+    border: 1px solid rgba(255,255,255,0.18);
+    border-radius: 14px;
+    padding: 5px 14px;
+    background: rgba(255,255,255,0.03);
+    backdrop-filter: blur(3px);
+  }
+  .battery {
+    display: flex; align-items: center; gap: 6px;
+    font-size: clamp(11px, 1.3vw, 13px);
+    color: var(--dim);
+  }
+  .battery svg { width: 22px; height: auto; }
+  .battery-fill { transition: width .6s ease; }
+
+  /* ===== ОСНОВНОЙ КОНТЕЙНЕР – позиционируем категории абсолютно ===== */
+  .xmb-wrapper {
+    position: relative;
+    z-index: 4;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  /* ===== Категории – всегда на одном месте (центр по вертикали и горизонтали) ===== */
+  .category-row {
+    position: absolute;
+    top: 45%;                /* примерная позиция, можно подстроить */
+    left: 50%;
+    transform: translate(-50%, -50%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: clamp(25px, 5.5vw, 60px);
+    z-index: 2;
+    height: 100px;
+    pointer-events: auto;    /* чтобы клики работали */
+  }
+
+  .category {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    transform: scale(1);
+    transition: transform var(--transition), filter var(--transition);
+    filter: brightness(0.62);
+    padding: 6px;
+    will-change: transform;
+  }
+
+  .category .icon-wrap {
+    width: clamp(34px, 4.6vw, 54px);
+    height: clamp(34px, 4.6vw, 54px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+  }
+  .category .icon-wrap img {
+    width: 100%; height: 100%;
+    object-fit: contain;
+  }
+  .category .label {
+    font-size: clamp(11px, 1.35vw, 15px);
+    font-weight: 500;
+    letter-spacing: 0.03em;
+    opacity: 0;
+    transform: translateY(-4px);
+    transition: opacity var(--transition), transform var(--transition);
+    white-space: nowrap;
+    text-shadow: 0 0 10px rgba(0,0,0,0.6);
+  }
+  .category.focused {
+    transform: scale(var(--focus-scale));
+    filter: brightness(1);
+  }
+  .category.focused .label {
+    opacity: 1;
+    transform: translateY(0);
+    color: var(--accent);
+  }
+
+  /* ===== Папки – появляются под категориями, не влияя на их позицию ===== */
+  .folder-row {
+    position: absolute;
+    top: 60%;                /* отступ от верха, чтобы быть под категориями */
+    left: 50%;
+    transform: translateX(-50%);
+    display: none;           /* скрыты по умолчанию */
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    max-height: 40vh;
+    overflow-y: auto;
+    padding: 0 10px;
+    width: 100%;
+    max-width: 300px;
+    z-index: 1;
+  }
+
+  .folder-row.active {
+    display: flex;
+  }
+
+  .folder-item {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    cursor: pointer;
+    padding: 8px 16px;
+    border-radius: 8px;
+    transition: all var(--transition);
+    width: 100%;
+    background: rgba(255,255,255,0.03);
+    border-left: 3px solid transparent;
+  }
+
+  .folder-item .icon-wrap {
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .folder-item .icon-wrap img {
+    width: 30px;
+    height: 30px;
+    opacity: 0.7;
+  }
+  .folder-item .label {
+    font-size: clamp(14px, 1.5vw, 18px);
+    font-weight: 400;
+    color: var(--dim);
+    transition: color var(--transition);
+    white-space: nowrap;
+  }
+  .folder-item.focused {
+    background: rgba(255,255,255,0.08);
+    border-left-color: var(--accent);
+    transform: translateX(6px);
+  }
+  .folder-item.focused .label {
+    color: #fff;
+  }
+  .folder-item.focused .icon-wrap img {
+    filter: brightness(1);
+  }
+
+  /* ===== Правая панель (треки) – фиксирована ===== */
+  .content-panel {
+    position: fixed;
+    right: 20px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 320px;
+    max-height: 70vh;
+    background: rgba(255,255,255,0.03);
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,0.06);
+    padding: 20px 18px;
+    backdrop-filter: blur(6px);
+    display: none;
+    flex-direction: column;
+    gap: 16px;
+    overflow-y: auto;
+    z-index: 10;
+  }
+
+  .content-panel.active {
+    display: flex;
+  }
+
+  .content-panel .panel-title {
+    font-size: clamp(16px, 2vw, 22px);
+    font-weight: 300;
+    color: var(--accent);
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    padding-bottom: 8px;
+  }
+
+  .content-panel .back-btn {
+    font-size: 14px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 30px;
+    padding: 2px 12px;
+    color: var(--dim);
+    cursor: pointer;
+    transition: all var(--transition);
+    display: inline-block;
+    margin-bottom: 6px;
+    width: fit-content;
+  }
+
+  .content-panel .back-btn:hover {
+    background: rgba(255,255,255,0.12);
+    color: #fff;
+  }
+
+  .track-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .track-item {
+    padding: 8px 14px;
+    background: rgba(255,255,255,0.02);
+    border-radius: 6px;
+    border-left: 3px solid transparent;
+    transition: all var(--transition);
+    cursor: pointer;
+    color: var(--dim);
+    font-size: clamp(13px, 1.4vw, 16px);
+  }
+
+  .track-item.focused,
+  .track-item:hover {
+    background: rgba(255,255,255,0.06);
+    border-left-color: var(--accent);
+    color: #fff;
+    transform: translateX(4px);
+  }
+
+  .mini-player {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-top: 6px;
+    padding: 12px;
+    background: rgba(255,255,255,0.04);
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.06);
+  }
+
+  .mini-player .cover {
+    width: 56px;
+    height: 56px;
+    border-radius: 6px;
+    background: #0a1a2e;
+    object-fit: cover;
+    flex-shrink: 0;
+  }
+
+  .mini-player .info {
+    flex: 1;
+    min-width: 0;
+  }
+  .mini-player .info .name {
+    font-weight: 500;
+    color: #fff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .mini-player .info .artist {
+    font-size: 13px;
+    color: var(--dim);
+  }
+
+  .mini-player .controls {
+    display: flex;
+    gap: 10px;
+  }
+
+  .mini-player .controls button {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 30px;
+    color: var(--dim);
+    padding: 4px 10px;
+    font-size: 16px;
+    cursor: pointer;
+    transition: all var(--transition);
+  }
+
+  .mini-player .controls button:hover {
+    background: rgba(255,255,255,0.15);
+    color: #fff;
+  }
+
+  .hint-bar {
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    z-index: 5;
+    display: flex;
+    justify-content: center;
+    gap: clamp(14px, 2.6vw, 34px);
+    padding: 14px 10px 18px;
+    font-size: clamp(10px, 1.15vw, 13px);
+    color: rgba(255,255,255,0.38);
+    letter-spacing: 0.03em;
+  }
+  .hint-bar span b { color: rgba(255,255,255,0.75); font-weight: 600; }
+
+  .toast {
+    position: fixed;
+    left: 50%; bottom: 72px;
+    transform: translate(-50%, 10px);
+    z-index: 10;
+    padding: 9px 22px;
+    border-radius: 20px;
+    background: rgba(10,20,40,0.75);
+    border: 1px solid rgba(255,255,255,0.15);
+    font-size: clamp(12px, 1.4vw, 14px);
+    color: var(--accent);
+    opacity: 0;
+    transition: opacity 0.35s ease, transform 0.35s ease;
+    pointer-events: none;
+    backdrop-filter: blur(4px);
+  }
+  .toast.show {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+
+  @media (max-width: 768px) {
+    .content-panel { right: 10px; width: 260px; }
+    .category-row { gap: 12px; }
+    .folder-row { max-width: 200px; }
+  }
+</style>
+</head>
+<body>
+
+  <canvas id="waveCanvas"></canvas>
+  <div class="vignette"></div>
+
+  <div class="top-bar">
+    <div class="clock" id="clock">--:--</div>
+    <div class="battery" id="batteryWrap">
+      <svg viewBox="0 0 26 12">
+        <rect x="1" y="1" width="21" height="10" rx="2.5" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="1.2"/>
+        <rect x="23" y="4" width="2" height="4" rx="1" fill="rgba(255,255,255,0.5)"/>
+        <rect id="batteryFill" class="battery-fill" x="3" y="3" width="17" height="6" rx="1" fill="var(--accent)"/>
+      </svg>
+      <span id="batteryLabel">100%</span>
+    </div>
+  </div>
+
+  <div class="xmb-wrapper">
+    <!-- Категории (абсолютно позиционированы) -->
+    <div class="category-row" id="categoryRow"></div>
+    <!-- Папки (абсолютно позиционированы, не влияют на категории) -->
+    <div class="folder-row" id="folderRow"></div>
+  </div>
+
+  <!-- Панель треков справа -->
+  <div class="content-panel" id="contentPanel">
+    <div class="panel-title" id="panelTitle">Треки</div>
+    <button class="back-btn" id="backBtn" style="display:none;">← Назад</button>
+    <div id="trackList"></div>
+    <div id="miniPlayerContainer"></div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <div class="hint-bar">
+    <span><b>◀ ▶</b> категории</span>
+    <span><b>▲ ▼</b> папки/треки</span>
+    <span><b>Enter</b> выбрать</span>
+    <span><b>Esc</b> назад</span>
+  </div>
+
+  <script>
+    /* =====================================================================
+    1. ИКОНКИ И ДАННЫЕ
+    ====================================================================== */
+    const ICONS = {
+      settings: 'icons/settings.png',
+      photo:    'icons/photo.png',
+      music:    'icons/music.png',
+      video:    'icons/video.png',
+      game:     'icons/game.png',
+      network:  'icons/network.png'
+    };
+
+    const FOLDER_ICON = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22white%22 stroke-width=%221.5%22%3E%3Cpath d=%22M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z%22/%3E%3C/svg%3E';
+
+    const categories = [
+      { id: 'settings', label: 'Настройки', icon: 'settings' },
+      { id: 'photo', label: 'Фото', icon: 'photo' },
+      { id: 'music', label: 'Музыка', icon: 'music' },
+      { id: 'video', label: 'Видео', icon: 'video' },
+      { id: 'game', label: 'Игра', icon: 'game' },
+      { id: 'network', label: 'Сеть', icon: 'network' }
+    ];
+
+    // Музыкальные данные – редактируйте здесь
+    const musicData = {
+      '2020': {
+        label: '2020',
+        tracks: [
+          { name: 'юs', artist: 'Sparkkord', cover: 'music/2020/cover.jpg', file: 'music/2020/Baby James - Sparkkord.mp3' },
+          { name: 'Tentacle Bits', artist: 'Pencil', cover: 'music/2020/cover.jpg', file: 'music/2020/Tentacle Bits - Pencil.mp3' }
+        ]
+      },
+      '2021': {
+        label: '2021',
+        tracks: [
+          { name: 'Summer Hit', artist: 'Artist D', cover: 'music/2021/cover.png', file: 'music/2021/Summer Hit - Artist D.mp3' }
+        ]
+      },
+      '2022': {
+        label: '2022',
+        tracks: [
+          { name: 'Neon Lights', artist: 'Artist F', cover: 'music/2022/cover.jpg', file: 'music/2022/Neon Lights - Artist F.mp3' }
+        ]
+      }
+    };
+
+    const folderNames = Object.keys(musicData);
+
+    /* =====================================================================
+    2. СОСТОЯНИЕ
+    ====================================================================== */
+    const state = {
+      categoryIndex: 0,
+      folderIndex: 0,
+      currentMode: 'categories',  // 'categories', 'folders', 'tracks'
+      currentFolder: null,
+      currentTrackIndex: 0,
+      focusedTrackIndex: 0,
+      isPlaying: false,
+      audioPlayer: null,
+      trackItems: []
+    };
+
+    /* =====================================================================
+    3. DOM-ссылки
+    ====================================================================== */
+    const categoryRow = document.getElementById('categoryRow');
+    const folderRow = document.getElementById('folderRow');
+    const contentPanel = document.getElementById('contentPanel');
+    const panelTitle = document.getElementById('panelTitle');
+    const backBtn = document.getElementById('backBtn');
+    const trackListEl = document.getElementById('trackList');
+    const miniPlayerContainer = document.getElementById('miniPlayerContainer');
+    const toastEl = document.getElementById('toast');
+
+    /* =====================================================================
+    4. РЕНДЕР КАТЕГОРИЙ
+    ====================================================================== */
+    function renderCategories() {
+      categoryRow.innerHTML = '';
+      categories.forEach((cat, idx) => {
+        const el = document.createElement('div');
+        el.className = 'category' + (idx === state.categoryIndex ? ' focused' : '');
+        el.dataset.index = idx;
+        el.innerHTML = `
+          <div class="icon-wrap"><img src="${ICONS[cat.icon]}" alt=""></div>
+          <div class="label">${cat.label}</div>
+        `;
+        el.addEventListener('click', () => {
+          if (state.categoryIndex === idx) return;
+          state.categoryIndex = idx;
+          if (categories[idx].id === 'music') {
+            state.currentMode = 'folders';
+            state.folderIndex = 0;
+            showFolders();
+          } else {
+            state.currentMode = 'categories';
+            hideFolders();
+            hideContentPanel();
+          }
+          playTone(880, 0.05);
+          updateAll();
+        });
+        categoryRow.appendChild(el);
+      });
+    }
+
+    /* =====================================================================
+    5. РАБОТА С ПАПКАМИ (вертикально, появляются снизу, не влияют на категории)
+    ====================================================================== */
+    function showFolders() {
+      folderRow.classList.add('active');
+      renderFolders();
+    }
+
+    function hideFolders() {
+      folderRow.classList.remove('active');
+      folderRow.innerHTML = '';
+    }
+
+    function renderFolders() {
+      folderRow.innerHTML = '';
+      if (folderNames.length === 0) return;
+
+      folderNames.forEach((folder, idx) => {
+        const el = document.createElement('div');
+        el.className = 'folder-item' + (idx === state.folderIndex ? ' focused' : '');
+        el.dataset.index = idx;
+        el.dataset.folder = folder;
+        const label = musicData[folder].label;
+        el.innerHTML = `
+          <div class="icon-wrap"><img src="${FOLDER_ICON}" alt="folder"></div>
+          <div class="label">${label}</div>
+        `;
+        el.addEventListener('click', () => {
+          state.folderIndex = idx;
+          state.currentFolder = folder;
+          state.currentTrackIndex = 0;
+          state.focusedTrackIndex = 0;
+          state.currentMode = 'tracks';
+          showContentPanel(folder);
+          updateAll();
+        });
+        folderRow.appendChild(el);
+      });
+    }
+
+    function updateFoldersFocus() {
+      document.querySelectorAll('.folder-item').forEach((el, i) => {
+        el.classList.toggle('focused', i === state.folderIndex);
+      });
+    }
+
+    /* =====================================================================
+    6. РАБОТА С ТРЕКАМИ (правая панель)
+    ====================================================================== */
+    function showContentPanel(folderName) {
+      const folder = musicData[folderName];
+      if (!folder) return;
+      contentPanel.classList.add('active');
+      panelTitle.textContent = folder.label;
+      backBtn.style.display = 'inline-block';
+      backBtn.onclick = () => {
+        goBack();
+      };
+
+      let html = '<div class="track-list">';
+      folder.tracks.forEach((track, idx) => {
+        const focused = (idx === state.focusedTrackIndex) ? ' focused' : '';
+        html += `<div class="track-item${focused}" data-index="${idx}">${track.name} — ${track.artist}</div>`;
+      });
+      html += '</div>';
+      trackListEl.innerHTML = html;
+
+      state.trackItems = trackListEl.querySelectorAll('.track-item');
+
+      state.trackItems.forEach(el => {
+        el.addEventListener('click', () => {
+          const idx = parseInt(el.dataset.index);
+          state.focusedTrackIndex = idx;
+          state.currentTrackIndex = idx;
+          playTrack(idx);
+          updateTrackFocus();
+          updateMiniPlayer();
+        });
+      });
+
+      updateMiniPlayer();
+    }
+
+    function hideContentPanel() {
+      contentPanel.classList.remove('active');
+      trackListEl.innerHTML = '';
+      miniPlayerContainer.innerHTML = '';
+      state.trackItems = [];
+    }
+
+    function updateTrackFocus() {
+      if (!state.trackItems.length) return;
+      state.trackItems.forEach((el, i) => {
+        el.classList.toggle('focused', i === state.focusedTrackIndex);
+      });
+      const focusedEl = state.trackItems[state.focusedTrackIndex];
+      if (focusedEl) focusedEl.scrollIntoView({ block: 'nearest' });
+    }
+
+    /* =====================================================================
+    7. ВОСПРОИЗВЕДЕНИЕ
+    ====================================================================== */
+    function playTrack(index) {
+      const folder = musicData[state.currentFolder];
+      if (!folder || !folder.tracks.length || index >= folder.tracks.length) return;
+      const track = folder.tracks[index];
+      if (!track.file) return;
+
+      if (state.audioPlayer) {
+        state.audioPlayer.pause();
+        state.audioPlayer = null;
+      }
+
+      state.audioPlayer = new Audio(track.file);
+      state.audioPlayer.addEventListener('ended', () => {
+        changeTrack(1);
+      });
+      state.audioPlayer.play();
+      state.isPlaying = true;
+      updateMiniPlayer();
+      showToast(`▶ ${track.name}`);
+    }
+
+    function togglePlay() {
+      if (!state.audioPlayer) {
+        const folder = musicData[state.currentFolder];
+        if (folder && folder.tracks.length) {
+          playTrack(state.currentTrackIndex);
+        }
+        return;
+      }
+      if (state.isPlaying) {
+        state.audioPlayer.pause();
+        state.isPlaying = false;
+      } else {
+        state.audioPlayer.play();
+        state.isPlaying = true;
+      }
+      updateMiniPlayer();
+    }
+
+    function changeTrack(delta) {
+      const folder = musicData[state.currentFolder];
+      if (!folder || !folder.tracks.length) return;
+      let newIdx = state.currentTrackIndex + delta;
+      if (newIdx < 0) newIdx = folder.tracks.length - 1;
+      if (newIdx >= folder.tracks.length) newIdx = 0;
+      state.currentTrackIndex = newIdx;
+      state.focusedTrackIndex = newIdx;
+      playTrack(newIdx);
+      updateTrackFocus();
+      updateMiniPlayer();
+    }
+
+    function updateMiniPlayer() {
+      const folder = musicData[state.currentFolder];
+      if (!folder || !folder.tracks.length) {
+        miniPlayerContainer.innerHTML = '';
+        return;
+      }
+      const track = folder.tracks[state.currentTrackIndex] || folder.tracks[0];
+      miniPlayerContainer.innerHTML = `
+        <div class="mini-player">
+          <img class="cover" src="${track.cover}" alt="cover">
+          <div class="info">
+            <div class="name">${track.name}</div>
+            <div class="artist">${track.artist}</div>
+          </div>
+          <div class="controls">
+            <button id="miniPrev">⏮</button>
+            <button id="miniPlayPause">${state.isPlaying ? '⏸' : '▶'}</button>
+            <button id="miniNext">⏭</button>
+          </div>
+        </div>
+      `;
+      document.getElementById('miniPrev').addEventListener('click', () => changeTrack(-1));
+      document.getElementById('miniNext').addEventListener('click', () => changeTrack(1));
+      document.getElementById('miniPlayPause').addEventListener('click', togglePlay);
+    }
+
+    /* =====================================================================
+    8. НАВИГАЦИЯ
+    ====================================================================== */
+    function goBack() {
+      if (state.currentMode === 'tracks') {
+        state.currentMode = 'folders';
+        state.folderIndex = 0;
+        hideContentPanel();
+        showFolders();
+        updateAll();
+      } else if (state.currentMode === 'folders') {
+        state.currentMode = 'categories';
+        hideFolders();
+        hideContentPanel();
+        updateAll();
+      }
+    }
+
+    function navigateHorizontal(direction) {
+      if (state.currentMode === 'categories') {
+        let newIdx = state.categoryIndex + direction;
+        if (newIdx < 0) newIdx = categories.length - 1;
+        if (newIdx >= categories.length) newIdx = 0;
+        state.categoryIndex = newIdx;
+        document.querySelectorAll('.category').forEach((el, i) => {
+          el.classList.toggle('focused', i === state.categoryIndex);
+        });
+        if (categories[state.categoryIndex].id === 'music') {
+          state.currentMode = 'folders';
+          state.folderIndex = 0;
+          showFolders();
+        } else {
+          state.currentMode = 'categories';
+          hideFolders();
+          hideContentPanel();
+        }
+        playTone(700, 0.045);
+        updateAll();
+      } else if (state.currentMode === 'folders' || state.currentMode === 'tracks') {
+        goBack();
+        playTone(700, 0.045);
+      }
+    }
+
+    function navigateVertical(direction) {
+      if (state.currentMode === 'categories') {
+        if (categories[state.categoryIndex].id === 'music') {
+          state.currentMode = 'folders';
+          state.folderIndex = 0;
+          showFolders();
+          updateAll();
+          playTone(760, 0.045);
+        }
+      } else if (state.currentMode === 'folders') {
+        let newIdx = state.folderIndex + direction;
+        if (newIdx < 0) newIdx = folderNames.length - 1;
+        if (newIdx >= folderNames.length) newIdx = 0;
+        state.folderIndex = newIdx;
+        updateFoldersFocus();
+        playTone(760, 0.045);
+      } else if (state.currentMode === 'tracks') {
+        let newIdx = state.focusedTrackIndex + direction;
+        if (newIdx < 0) newIdx = 0;
+        if (newIdx >= state.trackItems.length) newIdx = state.trackItems.length - 1;
+        state.focusedTrackIndex = newIdx;
+        state.currentTrackIndex = newIdx;
+        updateTrackFocus();
+        playTone(760, 0.045);
+      }
+    }
+
+    function activateCurrent() {
+      if (state.currentMode === 'categories') {
+        const cat = categories[state.categoryIndex];
+        if (cat.id === 'music') {
+          state.currentMode = 'folders';
+          state.folderIndex = 0;
+          showFolders();
+          updateAll();
+          playTone(1050, 0.08);
+        } else {
+          showToast(`Категория: ${cat.label}`);
+          playTone(1050, 0.08);
+        }
+      } else if (state.currentMode === 'folders') {
+        const folderName = folderNames[state.folderIndex];
+        state.currentFolder = folderName;
+        state.currentTrackIndex = 0;
+        state.focusedTrackIndex = 0;
+        state.currentMode = 'tracks';
+        showContentPanel(folderName);
+        updateAll();
+        playTone(1050, 0.08);
+      } else if (state.currentMode === 'tracks') {
+        const idx = state.focusedTrackIndex;
+        state.currentTrackIndex = idx;
+        playTrack(idx);
+        updateTrackFocus();
+        updateMiniPlayer();
+        playTone(1050, 0.08);
+      }
+    }
+
+    /* =====================================================================
+    9. ОБНОВЛЕНИЕ
+    ====================================================================== */
+    function updateAll() {
+      document.querySelectorAll('.category').forEach((el, i) => {
+        el.classList.toggle('focused', i === state.categoryIndex);
+      });
+    }
+
+    /* =====================================================================
+    10. КЛАВИАТУРА
+    ====================================================================== */
+    document.addEventListener('keydown', (e) => {
+      switch (e.key) {
+        case 'ArrowLeft':  e.preventDefault(); navigateHorizontal(-1); break;
+        case 'ArrowRight': e.preventDefault(); navigateHorizontal(1); break;
+        case 'ArrowUp':    e.preventDefault(); navigateVertical(-1); break;
+        case 'ArrowDown':  e.preventDefault(); navigateVertical(1); break;
+        case 'Enter':      e.preventDefault(); activateCurrent(); break;
+        case 'Escape':     e.preventDefault(); goBack(); break;
+      }
+    });
+
+    /* =====================================================================
+    11. ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+    ====================================================================== */
+    let toastTimer = null;
+    function showToast(text) {
+      toastEl.textContent = text;
+      toastEl.classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toastEl.classList.remove('show'), 1600);
+    }
+
+    let audioCtx = null;
+    function ensureAudio() {
+      if (!audioCtx) {
+        try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+        catch (err) {}
+      }
+    }
+    document.addEventListener('pointerdown', ensureAudio, { once: true });
+    document.addEventListener('keydown', ensureAudio, { once: true });
+
+    function playTone(freq = 800, duration = 0.05) {
+      if (!audioCtx) return;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.06, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
+      osc.connect(gain).connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + duration);
+    }
+
+    function updateClock() {
+      const now = new Date();
+      const h = String(now.getHours()).padStart(2, '0');
+      const m = String(now.getMinutes()).padStart(2, '0');
+      document.getElementById('clock').textContent = `${h}:${m}`;
+    }
+    updateClock();
+    setInterval(updateClock, 1000 * 15);
+
+    function setBatteryVisual(level, charging) {
+      const pct = Math.round(level * 100);
+      document.getElementById('batteryFill').setAttribute('width', (17 * level).toFixed(1));
+      document.getElementById('batteryLabel').textContent = pct + '%' + (charging ? ' ⚡' : '');
+    }
+    if (navigator.getBattery) {
+      navigator.getBattery().then(battery => {
+        setBatteryVisual(battery.level, battery.charging);
+        battery.addEventListener('levelchange', () => setBatteryVisual(battery.level, battery.charging));
+        battery.addEventListener('chargingchange', () => setBatteryVisual(battery.level, battery.charging));
+      }).catch(() => setBatteryVisual(1, false));
+    } else {
+      setBatteryVisual(1, false);
+    }
+
+    // Волны
+    const canvas = document.getElementById('waveCanvas');
+    const ctx = canvas.getContext('2d');
+    let W, H;
+    function resizeCanvas() {
+      W = canvas.width = window.innerWidth;
+      H = canvas.height = window.innerHeight;
+    }
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+
+    const waveLayers = [
+      { amp: 46, wavelength: 620, speed: 0.006, yRatio: 0.42, color: 'rgba(60,110,190,0.55)' },
+      { amp: 60, wavelength: 480, speed: 0.010, yRatio: 0.52, color: 'rgba(40,90,170,0.45)' },
+      { amp: 34, wavelength: 380, speed: 0.014, yRatio: 0.62, color: 'rgba(90,150,230,0.30)' },
+    ];
+    let t = 0;
+    function drawWaves() {
+      const bg = ctx.createLinearGradient(0, 0, 0, H);
+      bg.addColorStop(0, '#020815');
+      bg.addColorStop(0.55, '#04102a');
+      bg.addColorStop(1, '#071a3d');
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, W, H);
+
+      waveLayers.forEach(layer => {
+        ctx.beginPath();
+        const baseY = H * layer.yRatio;
+        ctx.moveTo(0, baseY);
+        for (let x = 0; x <= W; x += 6) {
+          const y = baseY + Math.sin((x / layer.wavelength) + t * layer.speed) * layer.amp;
+          ctx.lineTo(x, y);
+        }
+        ctx.lineTo(W, H);
+        ctx.lineTo(0, H);
+        ctx.closePath();
+        ctx.fillStyle = layer.color;
+        ctx.fill();
+      });
+      t += 1;
+      requestAnimationFrame(drawWaves);
+    }
+    drawWaves();
+
+    /* =====================================================================
+    12. ИНИЦИАЛИЗАЦИЯ
+    ====================================================================== */
+    renderCategories();
+    state.currentMode = 'categories';
+    hideFolders();
+    hideContentPanel();
+    updateAll();
+
+    showToast('PSP XMB | Стрелки для навигации, Enter для выбора');
+  </script>
+</body>
+</html>

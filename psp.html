@@ -1,0 +1,3145 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>XMB PSP</title>
+<style>
+  :root {
+    --ui-scale: 1.5;
+    --bg: #020611;
+    --accent: #bfe4ff;
+    --dim: rgba(255, 255, 255, 0.45);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  [hidden] { display: none !important; }
+  html, body {
+    width: 100%; height: 100%; overflow: hidden;
+    background: var(--bg); color: #fff;
+    font-family: "Segoe UI", Arial, sans-serif; user-select: none;
+  }
+  #waveCanvas { position: fixed; inset: 0; z-index: 0; }
+  .vignette {
+    position: fixed; inset: 0; z-index: 1; pointer-events: none;
+    background: radial-gradient(ellipse at 50% 30%, transparent 0%, rgba(0,4,12,0.35) 70%, rgba(0,2,8,0.65) 100%);
+  }
+
+  /* ===== Верхняя панель ===== */
+  .top-bar {
+    position: fixed; top: 0; right: 0; z-index: 10;
+    display: flex; align-items: center;
+    gap: calc(20px * var(--ui-scale));
+    padding: calc(14px * var(--ui-scale)) calc(20px * var(--ui-scale));
+    font-variant-numeric: tabular-nums; letter-spacing: 0.04em;
+    transition: opacity 0.5s;
+  }
+  .top-bar.hidden { opacity: 0; pointer-events: none; }
+  .datetime { display: flex; align-items: baseline; gap: calc(10px * var(--ui-scale)); }
+  .date-line {
+    font-size: calc(clamp(11px, 1.2vw, 14px) * var(--ui-scale));
+    color: var(--dim); text-shadow: 0 0 6px rgba(0,0,0,0.6);
+  }
+  .clock {
+    font-size: calc(clamp(14px, 1.8vw, 19px) * var(--ui-scale));
+    color: var(--accent);
+    text-shadow:
+      0 0 calc(6px * var(--ui-scale)) rgba(160, 214, 255, 0.85),
+      0 0 calc(14px * var(--ui-scale)) rgba(160, 214, 255, 0.45);
+  }
+  .battery svg {
+    width: calc(30px * var(--ui-scale)); height: auto; overflow: visible;
+    filter: drop-shadow(0 0 calc(4px * var(--ui-scale)) rgba(160, 214, 255, 0.35));
+  }
+  .bat-seg { transition: opacity 0.4s ease, fill 0.4s ease; }
+
+  /* ===== Уровень 1 — X ===== */
+  .xmb-wrapper {
+    position: relative; z-index: 4;
+    width: 100%; height: 100%;
+    display: flex; align-items: flex-start; justify-content: center;
+    padding-top: calc(40vh + (var(--ui-scale) - 1) * 8vh);
+  }
+  .xmb-left {
+    position: relative;
+    transform: translate(0px, calc(-160px * var(--ui-scale)));
+  }
+  .category-row {
+    display: flex; flex-direction: row; align-items: flex-start;
+    gap: calc(clamp(60px, 8vw, 100px) * var(--ui-scale));
+    position: relative;
+    filter: blur(0);
+    opacity: 1;
+    transition:
+      transform 0.4s cubic-bezier(.22,.9,.32,1),
+      filter 0.35s ease,
+      opacity 0.35s ease;
+  }
+  .category {
+    display: flex; flex-direction: column; align-items: center;
+    gap: calc(4px * var(--ui-scale)); cursor: pointer;
+    transition: opacity 0.3s;
+  }
+  .icon-wrap {
+    width: calc(clamp(50px, 6.5vw, 80px) * var(--ui-scale));
+    height: calc(clamp(50px, 6.5vw, 80px) * var(--ui-scale));
+    display: flex; align-items: center; justify-content: center;
+  }
+  .icon-wrap img {
+    width: 100%; height: 100%; object-fit: contain;
+    opacity: 0.55;
+    filter:
+      drop-shadow(0 0 0 rgba(160, 214, 255, 0))
+      drop-shadow(0 0 0 rgba(160, 214, 255, 0))
+      drop-shadow(0 0 0 rgba(160, 214, 255, 0));
+    transition: opacity 0.3s, filter 0.4s;
+  }
+  .label {
+    font-size: calc(clamp(11px, 1.35vw, 15px) * var(--ui-scale));
+    font-weight: 500; white-space: nowrap;
+    color: var(--dim);
+    text-shadow: 0 0 10px rgba(0,0,0,0.6);
+    transition: color 0.3s, text-shadow 0.4s;
+  }
+
+  body.focus-x .category.focused .icon-wrap img {
+    opacity: 1;
+    filter:
+      drop-shadow(0 0 calc(8px  * var(--ui-scale)) rgba(160, 214, 255, 0.9))
+      drop-shadow(0 0 calc(18px * var(--ui-scale)) rgba(160, 214, 255, 0.55))
+      drop-shadow(0 0 calc(32px * var(--ui-scale)) rgba(160, 214, 255, 0.3));
+    animation: pulse-x 2.8s ease-in-out infinite;
+  }
+  body.focus-x .category.focused .label {
+    color: var(--accent);
+    text-shadow:
+      0 0 calc(6px  * var(--ui-scale)) rgba(160, 214, 255, 0.95),
+      0 0 calc(14px * var(--ui-scale)) rgba(160, 214, 255, 0.7),
+      0 0 calc(28px * var(--ui-scale)) rgba(160, 214, 255, 0.4);
+    animation: pulse-x-label 2.8s ease-in-out infinite;
+  }
+
+  body.focus-y .category .icon-wrap img,
+  body.focus-z .category .icon-wrap img {
+    opacity: 0.35;
+    filter:
+      drop-shadow(0 0 0 rgba(160, 214, 255, 0))
+      drop-shadow(0 0 0 rgba(160, 214, 255, 0))
+      drop-shadow(0 0 0 rgba(160, 214, 255, 0));
+    animation: none;
+  }
+  body.focus-y .category .label,
+  body.focus-z .category .label {
+    color: rgba(255, 255, 255, 0.25);
+    text-shadow: none;
+    animation: none;
+  }
+  body.focus-z .category-row {
+    filter: blur(calc(1.4px * var(--ui-scale)));
+    opacity: 0.48;
+  }
+
+  /* ===== Уровень 2 — Y ===== */
+  .submenu-column {
+    position: absolute; top: 0; left: 0;
+    min-width: calc(250px * var(--ui-scale));
+    visibility: hidden;
+    opacity: 1;
+    transition: top 0.3s, left 0.4s, filter 0.35s ease, opacity 0.35s ease;
+    /* Keep the filtered column above the background vignette. */
+    z-index: 5;
+    transform: none; filter: none;
+  }
+  .submenu-track {
+    display: flex; flex-direction: column;
+    gap: calc(0.5px * var(--ui-scale));
+    padding: calc(5px * var(--ui-scale)) 0;
+  }
+  .submenu-item {
+    position: relative; z-index: 1;
+    display: flex; align-items: center;
+    gap: calc(12px * var(--ui-scale));
+    padding: calc(2px * var(--ui-scale)) calc(1px * var(--ui-scale))
+             calc(2px * var(--ui-scale)) calc(1px * var(--ui-scale));
+    font-size: calc(clamp(13px, 1.7vw, 17px) * var(--ui-scale));
+    color: var(--dim); cursor: pointer;
+    transition: color 0.25s, opacity 0.25s, transform 0.35s cubic-bezier(.22,.9,.32,1);
+  }
+  .submenu-item .item-icon {
+    width: calc(clamp(50px, 6.5vw, 80px) * var(--ui-scale));
+    height: calc(clamp(50px, 6.5vw, 80px) * var(--ui-scale));
+    flex: 0 0 auto; object-fit: contain;
+    transform: scale(1);
+    filter:
+      drop-shadow(0 0 0 rgba(160, 214, 255, 0))
+      drop-shadow(0 0 0 rgba(160, 214, 255, 0))
+      drop-shadow(0 0 0 rgba(160, 214, 255, 0));
+    transition: transform 0.25s, filter 0.35s;
+  }
+
+  body.focus-y .submenu-item.focused {
+    color: var(--accent); font-weight: 600;
+    text-shadow:
+      0 0 calc(6px  * var(--ui-scale)) rgba(160, 214, 255, 0.95),
+      0 0 calc(14px * var(--ui-scale)) rgba(160, 214, 255, 0.65),
+      0 0 calc(28px * var(--ui-scale)) rgba(160, 214, 255, 0.35);
+    animation: pulse-y-text 2.8s ease-in-out infinite;
+  }
+  body.focus-y .submenu-item.focused .item-icon {
+    transform: scale(1);
+    filter:
+      drop-shadow(0 0 calc(6px  * var(--ui-scale)) rgba(160, 214, 255, 0.9))
+      drop-shadow(0 0 calc(14px * var(--ui-scale)) rgba(160, 214, 255, 0.55))
+      drop-shadow(0 0 calc(24px * var(--ui-scale)) rgba(160, 214, 255, 0.3));
+    animation: pulse-y-icon 2.8s ease-in-out infinite;
+  }
+
+  body.focus-z .submenu-item {
+    opacity: 0.5;
+    animation: none;
+  }
+  body.focus-z .submenu-column {
+    filter: blur(calc(1.15px * var(--ui-scale)));
+    opacity: 0.58;
+  }
+  body.focus-z .submenu-item.focused {
+    color: var(--dim);
+    font-weight: 500;
+    text-shadow: none;
+    animation: none;
+  }
+  body.focus-z .submenu-item.focused .item-icon {
+    transform: scale(0.8);
+    filter:
+      drop-shadow(0 0 0 rgba(160, 214, 255, 0))
+      drop-shadow(0 0 0 rgba(160, 214, 255, 0))
+      drop-shadow(0 0 0 rgba(160, 214, 255, 0));
+    animation: none;
+  }
+
+  /* ===== Уровень 3 — Z ===== */
+  .level3-column {
+    position: absolute;
+    min-width: calc(340px * var(--ui-scale));
+    visibility: hidden;
+    transition: top 0.3s, left 0.4s;
+    z-index: 7;
+    -webkit-mask-image: linear-gradient(to bottom,
+      transparent 0px,
+      black calc(40px * var(--ui-scale)),
+      black calc(100% - 40px * var(--ui-scale)),
+      transparent 100%);
+    mask-image: linear-gradient(to bottom,
+      transparent 0px,
+      black calc(40px * var(--ui-scale)),
+      black calc(100% - 40px * var(--ui-scale)),
+      transparent 100%);
+  }
+  .level3-track {
+    display: flex; flex-direction: column;
+    gap: calc(2px * var(--ui-scale));
+    padding: calc(40px * var(--ui-scale)) 0;
+  }
+  .level3-item {
+    position: relative; z-index: 1;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: calc(20px * var(--ui-scale));
+    padding: calc(9px * var(--ui-scale)) calc(6px * var(--ui-scale))
+             calc(9px * var(--ui-scale)) calc(18px * var(--ui-scale));
+    font-size: calc(clamp(13px, 1.7vw, 17px) * var(--ui-scale));
+    color: rgba(255, 255, 255, 0.68); cursor: pointer;
+    text-shadow: 0 calc(1px * var(--ui-scale)) calc(5px * var(--ui-scale)) rgba(0, 0, 0, 0.72);
+    transition: color 0.25s, transform 0.35s cubic-bezier(.22,.9,.32,1);
+  }
+  .level3-item .lbl { flex: 1; white-space: nowrap; }
+  .level3-item .val {
+    color: rgba(255, 255, 255, 0.62);
+    font-size: calc(clamp(11px, 1.4vw, 14px) * var(--ui-scale));
+    white-space: nowrap; opacity: 1;
+  }
+  .level3-item.focused {
+    color: var(--accent); font-weight: 600;
+    text-shadow:
+      0 0 calc(7px  * var(--ui-scale)) rgba(210, 238, 255, 1),
+      0 0 calc(16px * var(--ui-scale)) rgba(160, 214, 255, 0.82),
+      0 0 calc(32px * var(--ui-scale)) rgba(160, 214, 255, 0.5);
+    animation: pulse-z-text 2.8s ease-in-out infinite;
+  }
+  .level3-item.focused .val {
+    color: var(--accent); opacity: 1;
+    text-shadow:
+      0 0 calc(7px * var(--ui-scale)) rgba(210, 238, 255, 0.95),
+      0 0 calc(16px * var(--ui-scale)) rgba(160, 214, 255, 0.72),
+      0 0 calc(28px * var(--ui-scale)) rgba(160, 214, 255, 0.4);
+  }
+  .level3-item.info { cursor: default; }
+  .level3-item.info.focused {
+    color: var(--accent);
+    font-weight: 600;
+  }
+
+  /* ===== Редактор даты-времени ===== */
+  .dt-editor {
+    position: absolute;
+    visibility: hidden;
+    display: flex;
+    gap: calc(14px * var(--ui-scale));
+    padding: 0;
+    background: none;
+    border: none;
+    transition: top 0.3s, left 0.4s;
+    z-index: 12;
+    align-items: center;
+  }
+  .dt-cell {
+    min-width: calc(46px * var(--ui-scale));
+    text-align: center;
+    font-size: calc(clamp(18px, 2.2vw, 26px) * var(--ui-scale));
+    font-variant-numeric: tabular-nums;
+    color: var(--dim);
+    background: none; border: none; border-radius: 0;
+    transition: color 0.2s, text-shadow 0.2s;
+  }
+  .dt-cell.focused {
+    color: #fff;
+    text-shadow:
+      0 0 calc(8px * var(--ui-scale)) rgba(160, 214, 255, 1),
+      0 0 calc(20px * var(--ui-scale)) rgba(160, 214, 255, 0.55);
+  }
+  .dt-sep {
+    font-size: calc(clamp(18px, 2.2vw, 26px) * var(--ui-scale));
+    color: var(--dim);
+    padding: 0 calc(4px * var(--ui-scale));
+  }
+
+  /* ===== SCREENSAVER ===== */
+  .screensaver {
+    position: fixed; inset: 0; z-index: 100;
+    background: #000;
+    display: flex; align-items: center; justify-content: center;
+    opacity: 0; pointer-events: none;
+    transition: opacity 1.2s ease;
+  }
+  .screensaver.active { opacity: 1; pointer-events: auto; }
+  .power-overlay {
+    position: fixed; inset: 0; z-index: 99;
+    display: grid; place-items: center;
+    background: #000;
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.45s ease;
+  }
+  .power-overlay.dim { opacity: 0.72; }
+  .power-overlay.sleep { opacity: 1; pointer-events: auto; }
+  .power-overlay span {
+    color: rgba(191, 228, 255, 0.58);
+    font-size: calc(14px * var(--ui-scale));
+    letter-spacing: 0.14em;
+  }
+  .psp-logo {
+    font-size: calc(clamp(48px, 8vw, 96px) * var(--ui-scale));
+    font-weight: 200;
+    letter-spacing: 0.35em;
+    color: rgba(160, 214, 255, 0.18);
+    text-shadow:
+      0 0 calc(30px * var(--ui-scale)) rgba(160, 214, 255, 0.12),
+      0 0 calc(60px * var(--ui-scale)) rgba(160, 214, 255, 0.06);
+    user-select: none;
+    animation: psp-glow 4s ease-in-out infinite;
+  }
+  @keyframes psp-glow {
+    0%, 100% { opacity: 0.7; }
+    50%      { opacity: 1; }
+  }
+
+  /* ===== ТРЕКИ-КАРТОЧКИ (музыка) ===== */
+  .level3-item.track-card {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: calc(24px * var(--ui-scale));
+    padding: calc(14px * var(--ui-scale)) calc(18px * var(--ui-scale));
+    min-width: calc(500px * var(--ui-scale));
+    cursor: pointer;
+    opacity: 0.7;
+    transition: opacity 0.25s;
+  }
+  .level3-item.track-card.focused {
+    opacity: 1;
+    animation: none;
+    color: inherit;
+    text-shadow: none;
+  }
+  .level3-item.track-card.focused .track-title {
+    color: var(--accent);
+    text-shadow:
+      0 0 calc(7px * var(--ui-scale)) rgba(210, 238, 255, 1),
+      0 0 calc(16px * var(--ui-scale)) rgba(160, 214, 255, 0.82),
+      0 0 calc(32px * var(--ui-scale)) rgba(160, 214, 255, 0.5);
+    animation: pulse-z-text 2.8s ease-in-out infinite;
+  }
+
+  .track-cover {
+    width: calc(140px * var(--ui-scale));
+    height: calc(140px * var(--ui-scale));
+    border-radius: calc(4px * var(--ui-scale));
+    background-size: cover;
+    background-position: center;
+    background-color: rgba(255,255,255,0.05);
+    flex-shrink: 0;
+    position: relative;
+    box-shadow: 0 0 calc(22px * var(--ui-scale)) rgba(0, 0, 0, 0.55);
+    overflow: hidden;
+  }
+  .track-cover.playing::after {
+    content: '▶';
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: calc(52px * var(--ui-scale));
+    color: rgba(255, 255, 255, 0.85);
+    background: rgba(0, 0, 0, 0.35);
+    text-shadow: 0 0 calc(14px * var(--ui-scale)) rgba(255, 255, 255, 0.8);
+    animation: play-pulse 1.8s ease-in-out infinite;
+  }
+  .track-cover.paused::after {
+    content: '❚❚';
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: calc(42px * var(--ui-scale));
+    color: rgba(255, 255, 255, 0.75);
+    background: rgba(0, 0, 0, 0.45);
+    text-shadow: 0 0 calc(10px * var(--ui-scale)) rgba(255, 255, 255, 0.6);
+  }
+  @keyframes play-pulse {
+    0%, 100% { opacity: 0.7; }
+    50%      { opacity: 1; }
+  }
+
+  .track-info {
+    display: flex; flex-direction: column;
+    gap: calc(6px * var(--ui-scale));
+    min-width: 0; flex: 1;
+  }
+  .track-title {
+    font-size: calc(clamp(18px, 2vw, 24px) * var(--ui-scale));
+    font-weight: 600;
+    color: #fff;
+    text-shadow: 0 0 calc(8px * var(--ui-scale)) rgba(0, 0, 0, 0.6);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    transition: text-shadow 0.3s;
+  }
+  .track-date {
+    font-size: calc(clamp(11px, 1.3vw, 14px) * var(--ui-scale));
+    color: rgba(255, 255, 255, 0.5);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.02em;
+  }
+  .level3-column.track-mode {
+    min-width: calc(540px * var(--ui-scale));
+  }
+
+  /* ===== ФОТО-КАРТОЧКИ ===== */
+  .level3-item.photo-card {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: calc(24px * var(--ui-scale));
+    padding: calc(12px * var(--ui-scale)) calc(18px * var(--ui-scale));
+    min-width: calc(560px * var(--ui-scale));
+    cursor: pointer;
+    opacity: 0.7;
+    transition: opacity 0.25s;
+  }
+  .level3-item.photo-card.focused {
+    opacity: 1;
+    animation: none;
+    color: inherit;
+    text-shadow: none;
+  }
+  .level3-item.photo-card.focused .photo-title {
+    color: var(--accent);
+    text-shadow:
+      0 0 calc(7px * var(--ui-scale)) rgba(210, 238, 255, 1),
+      0 0 calc(16px * var(--ui-scale)) rgba(160, 214, 255, 0.82),
+      0 0 calc(32px * var(--ui-scale)) rgba(160, 214, 255, 0.5);
+    animation: pulse-z-text 2.8s ease-in-out infinite;
+  }
+  .photo-thumb {
+    width: calc(180px * var(--ui-scale));
+    height: calc(135px * var(--ui-scale));
+    border-radius: calc(4px * var(--ui-scale));
+    background: #000 center/cover no-repeat;
+    flex-shrink: 0;
+    box-shadow: 0 0 calc(22px * var(--ui-scale)) rgba(0, 0, 0, 0.55);
+    image-orientation: from-image;
+  }
+  .photo-info {
+    display: flex;
+    flex-direction: column;
+    gap: calc(6px * var(--ui-scale));
+    min-width: 0;
+    flex: 1;
+  }
+  .photo-title {
+    color: #fff;
+    font-size: calc(clamp(16px, 1.8vw, 22px) * var(--ui-scale));
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-shadow: 0 0 calc(8px * var(--ui-scale)) rgba(0, 0, 0, 0.6);
+  }
+  .photo-meta {
+    color: rgba(255, 255, 255, 0.55);
+    font-size: calc(clamp(11px, 1.3vw, 14px) * var(--ui-scale));
+    font-variant-numeric: tabular-nums;
+  }
+  .level3-column.photo-mode {
+    min-width: calc(600px * var(--ui-scale));
+  }
+
+  /* ===== ПРОСМОТР ФОТО ===== */
+  .photo-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 92;
+    display: grid;
+    place-items: center;
+    padding: calc(92px * var(--ui-scale)) calc(120px * var(--ui-scale)) calc(76px * var(--ui-scale));
+    background: rgba(2, 5, 9, 0.78);
+    backdrop-filter: blur(calc(7px * var(--ui-scale)));
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity .35s ease, visibility .35s ease;
+  }
+  .photo-overlay.active {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+  }
+  .photo-overlay > img {
+    display: block;
+    width: auto;
+    height: auto;
+    max-width: min(78vw, calc(1180px * var(--ui-scale)));
+    max-height: 70vh;
+    object-fit: contain;
+    image-orientation: from-image;
+    border-radius: calc(3px * var(--ui-scale));
+    box-shadow:
+      0 calc(18px * var(--ui-scale)) calc(70px * var(--ui-scale)) rgba(0, 0, 0, 0.72),
+      0 0 calc(22px * var(--ui-scale)) rgba(180, 220, 255, 0.12);
+    transition: opacity .2s ease, transform .25s ease;
+  }
+  .photo-overlay > img.photo-portrait {
+    max-width: min(54vw, calc(720px * var(--ui-scale)));
+    max-height: 76vh;
+  }
+  .photo-overlay > img.photo-landscape {
+    max-width: min(78vw, calc(1180px * var(--ui-scale)));
+    max-height: 70vh;
+  }
+  .photo-viewer-top {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: calc(22px * var(--ui-scale)) calc(34px * var(--ui-scale)) calc(50px * var(--ui-scale));
+    background: linear-gradient(to bottom, rgba(0,0,0,.78), rgba(0,0,0,0));
+    pointer-events: none;
+  }
+  .photo-viewer-title {
+    color: #fff;
+    font-size: calc(clamp(14px, 1.6vw, 19px) * var(--ui-scale));
+    text-shadow: 0 0 10px rgba(0,0,0,.9);
+  }
+  .photo-viewer-counter {
+    color: var(--accent);
+    font-size: calc(clamp(12px, 1.3vw, 15px) * var(--ui-scale));
+    font-variant-numeric: tabular-nums;
+  }
+  .photo-viewer-hint {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: calc(54px * var(--ui-scale)) calc(34px * var(--ui-scale)) calc(20px * var(--ui-scale));
+    color: rgba(255,255,255,.72);
+    text-align: center;
+    font-size: calc(12px * var(--ui-scale));
+    background: linear-gradient(to top, rgba(0,0,0,.78), rgba(0,0,0,0));
+    pointer-events: none;
+  }
+  .photo-viewer-btn {
+    position: absolute;
+    z-index: 1;
+    display: grid;
+    place-items: center;
+    width: calc(48px * var(--ui-scale));
+    height: calc(48px * var(--ui-scale));
+    border: 1px solid rgba(191,228,255,.34);
+    border-radius: 50%;
+    color: var(--accent);
+    background: rgba(0,0,0,.5);
+    font: inherit;
+    font-size: calc(24px * var(--ui-scale));
+    cursor: pointer;
+    opacity: .65;
+    backdrop-filter: blur(6px);
+    transition: opacity .2s, background .2s, transform .2s;
+  }
+  .photo-viewer-btn:hover,
+  .photo-viewer-btn:focus-visible {
+    opacity: 1;
+    outline: none;
+    background: rgba(160,214,255,.18);
+    transform: scale(1.06);
+  }
+  .photo-viewer-prev { left: calc(24px * var(--ui-scale)); top: 50%; transform: translateY(-50%); }
+  .photo-viewer-next { right: calc(24px * var(--ui-scale)); top: 50%; transform: translateY(-50%); }
+  .photo-viewer-prev:hover,
+  .photo-viewer-prev:focus-visible,
+  .photo-viewer-next:hover,
+  .photo-viewer-next:focus-visible { transform: translateY(-50%) scale(1.06); }
+  .photo-viewer-close {
+    top: calc(70px * var(--ui-scale));
+    right: calc(24px * var(--ui-scale));
+    width: calc(40px * var(--ui-scale));
+    height: calc(40px * var(--ui-scale));
+    font-size: calc(16px * var(--ui-scale));
+  }
+
+  /* ===== ВИДЕО-КАРТОЧКИ ===== */
+  .level3-item.video-card {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: calc(24px * var(--ui-scale));
+    padding: calc(12px * var(--ui-scale)) calc(18px * var(--ui-scale));
+    min-width: calc(560px * var(--ui-scale));
+    cursor: pointer;
+    opacity: 0.7;
+    transition: opacity 0.25s;
+  }
+  .level3-item.video-card.focused {
+    opacity: 1;
+    animation: none;
+    color: inherit;
+    text-shadow: none;
+  }
+  .level3-item.video-card.focused .video-title {
+    color: var(--accent);
+    text-shadow:
+      0 0 calc(7px * var(--ui-scale)) rgba(210, 238, 255, 1),
+      0 0 calc(16px * var(--ui-scale)) rgba(160, 214, 255, 0.82),
+      0 0 calc(32px * var(--ui-scale)) rgba(160, 214, 255, 0.5);
+    animation: pulse-z-text 2.8s ease-in-out infinite;
+  }
+
+  .video-thumb {
+    width: calc(200px * var(--ui-scale));
+    height: calc(112px * var(--ui-scale));
+    border-radius: calc(4px * var(--ui-scale));
+    background: #000 center/cover no-repeat;
+    background-color: rgba(255,255,255,0.05);
+    flex-shrink: 0;
+    position: relative;
+    box-shadow: 0 0 calc(22px * var(--ui-scale)) rgba(0, 0, 0, 0.55);
+    overflow: hidden;
+  }
+  .video-info {
+    display: flex; flex-direction: column;
+    gap: calc(6px * var(--ui-scale));
+    min-width: 0; flex: 1;
+  }
+  .video-title {
+    font-size: calc(clamp(16px, 1.8vw, 22px) * var(--ui-scale));
+    font-weight: 600;
+    color: #fff;
+    text-shadow: 0 0 calc(8px * var(--ui-scale)) rgba(0, 0, 0, 0.6);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    transition: text-shadow 0.3s;
+  }
+  .video-meta {
+    font-size: calc(clamp(11px, 1.3vw, 14px) * var(--ui-scale));
+    color: rgba(255, 255, 255, 0.55);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.02em;
+  }
+  .level3-column.video-mode {
+    min-width: calc(600px * var(--ui-scale));
+  }
+
+  /* Превью-видео, играющее поверх выделенной карточки */
+  .video-preview {
+    position: fixed;
+    z-index: 6;
+    object-fit: cover;
+    border-radius: calc(4px * var(--ui-scale));
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    box-shadow: 0 0 calc(22px * var(--ui-scale)) rgba(0, 0, 0, 0.55);
+  }
+  .video-preview.active { opacity: 1; }
+
+  /* ===== ВИДЕОПЛЕЕР (полный экран) ===== */
+  .video-overlay {
+    position: fixed; inset: 0; z-index: 90;
+    background: #000;
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.4s ease;
+  }
+  .video-overlay.active { opacity: 1; pointer-events: auto; }
+  .video-overlay video {
+    width: 100%; height: 100%;
+    object-fit: contain;
+    background: #000;
+  }
+  .video-controls {
+    position: absolute; inset: 0;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.35s ease;
+  }
+  .video-controls.visible { opacity: 1; }
+  .vc-top, .vc-bottom {
+    position: absolute; left: 0; right: 0;
+    padding: calc(24px * var(--ui-scale)) calc(36px * var(--ui-scale));
+    background: linear-gradient(to bottom,
+      rgba(0, 0, 0, 0.7),
+      rgba(0, 0, 0, 0));
+    pointer-events: auto;
+  }
+  .vc-top { top: 0; }
+  .vc-bottom {
+    bottom: 0;
+    background: linear-gradient(to top,
+      rgba(0, 0, 0, 0.7),
+      rgba(0, 0, 0, 0));
+    display: flex; align-items: center; justify-content: center;
+    gap: calc(28px * var(--ui-scale));
+  }
+  .vc-title {
+    font-size: calc(clamp(16px, 1.9vw, 22px) * var(--ui-scale));
+    font-weight: 600; color: #fff;
+    text-shadow: 0 0 calc(8px * var(--ui-scale)) rgba(0,0,0,0.8);
+    margin-bottom: calc(6px * var(--ui-scale));
+  }
+  .vc-time {
+    font-size: calc(clamp(13px, 1.5vw, 16px) * var(--ui-scale));
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.03em;
+    text-shadow: 0 0 calc(6px * var(--ui-scale)) rgba(160, 214, 255, 0.6);
+  }
+  .vc-timeline {
+    position: absolute;
+    left: calc(36px * var(--ui-scale));
+    right: calc(36px * var(--ui-scale));
+    top: calc(80px * var(--ui-scale));
+    height: calc(3px * var(--ui-scale));
+    background: rgba(255, 255, 255, 0.18);
+    border-radius: calc(3px * var(--ui-scale));
+    pointer-events: auto;
+    overflow: hidden;
+  }
+  .vc-timeline-fill {
+    height: 100%;
+    background: var(--accent);
+    box-shadow: 0 0 calc(10px * var(--ui-scale)) rgba(160, 214, 255, 0.8);
+    transition: width 0.15s linear;
+    width: 0%;
+  }
+  .vc-btn {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: var(--accent);
+    width: calc(52px * var(--ui-scale));
+    height: calc(52px * var(--ui-scale));
+    border-radius: 50%;
+    font-size: calc(18px * var(--ui-scale));
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.2s;
+    backdrop-filter: blur(6px);
+  }
+  .vc-btn:hover {
+    background: rgba(160, 214, 255, 0.18);
+    border-color: rgba(160, 214, 255, 0.5);
+    text-shadow: 0 0 calc(10px * var(--ui-scale)) rgba(160, 214, 255, 1);
+  }
+
+  /* ===== Анимации ===== */
+  @keyframes pulse-x {
+    0%, 100% {
+      filter:
+        drop-shadow(0 0 calc(8px  * var(--ui-scale)) rgba(160, 214, 255, 0.9))
+        drop-shadow(0 0 calc(18px * var(--ui-scale)) rgba(160, 214, 255, 0.55))
+        drop-shadow(0 0 calc(32px * var(--ui-scale)) rgba(160, 214, 255, 0.3));
+    }
+    50% {
+      filter:
+        drop-shadow(0 0 calc(11px * var(--ui-scale)) rgba(160, 214, 255, 1))
+        drop-shadow(0 0 calc(24px * var(--ui-scale)) rgba(160, 214, 255, 0.8))
+        drop-shadow(0 0 calc(42px * var(--ui-scale)) rgba(160, 214, 255, 0.5));
+    }
+  }
+  @keyframes pulse-x-label {
+    0%, 100% {
+      text-shadow:
+        0 0 calc(6px  * var(--ui-scale)) rgba(160, 214, 255, 0.95),
+        0 0 calc(14px * var(--ui-scale)) rgba(160, 214, 255, 0.7),
+        0 0 calc(28px * var(--ui-scale)) rgba(160, 214, 255, 0.4);
+    }
+    50% {
+      text-shadow:
+        0 0 calc(9px  * var(--ui-scale)) rgba(160, 214, 255, 1),
+        0 0 calc(20px * var(--ui-scale)) rgba(160, 214, 255, 0.9),
+        0 0 calc(36px * var(--ui-scale)) rgba(160, 214, 255, 0.6);
+    }
+  }
+  @keyframes pulse-y-icon {
+    0%, 100% {
+      filter:
+        drop-shadow(0 0 calc(6px  * var(--ui-scale)) rgba(160, 214, 255, 0.9))
+        drop-shadow(0 0 calc(14px * var(--ui-scale)) rgba(160, 214, 255, 0.55))
+        drop-shadow(0 0 calc(24px * var(--ui-scale)) rgba(160, 214, 255, 0.3));
+    }
+    50% {
+      filter:
+        drop-shadow(0 0 calc(9px  * var(--ui-scale)) rgba(160, 214, 255, 1))
+        drop-shadow(0 0 calc(20px * var(--ui-scale)) rgba(160, 214, 255, 0.8))
+        drop-shadow(0 0 calc(34px * var(--ui-scale)) rgba(160, 214, 255, 0.5));
+    }
+  }
+  @keyframes pulse-y-text {
+    0%, 100% {
+      text-shadow:
+        0 0 calc(6px  * var(--ui-scale)) rgba(160, 214, 255, 0.95),
+        0 0 calc(14px * var(--ui-scale)) rgba(160, 214, 255, 0.65),
+        0 0 calc(28px * var(--ui-scale)) rgba(160, 214, 255, 0.35);
+    }
+    50% {
+      text-shadow:
+        0 0 calc(9px  * var(--ui-scale)) rgba(160, 214, 255, 1),
+        0 0 calc(20px * var(--ui-scale)) rgba(160, 214, 255, 0.85),
+        0 0 calc(38px * var(--ui-scale)) rgba(160, 214, 255, 0.55);
+    }
+  }
+
+  @keyframes pulse-z-text {
+    0%, 100% {
+      text-shadow:
+        0 0 calc(7px  * var(--ui-scale)) rgba(210, 238, 255, 1),
+        0 0 calc(16px * var(--ui-scale)) rgba(160, 214, 255, 0.82),
+        0 0 calc(32px * var(--ui-scale)) rgba(160, 214, 255, 0.5);
+    }
+    50% {
+      text-shadow:
+        0 0 calc(10px * var(--ui-scale)) rgba(225, 245, 255, 1),
+        0 0 calc(23px * var(--ui-scale)) rgba(160, 214, 255, 0.95),
+        0 0 calc(44px * var(--ui-scale)) rgba(160, 214, 255, 0.68);
+    }
+  }
+
+  @keyframes pulse-z-media {
+    0%, 100% {
+      box-shadow:
+        0 0 0 calc(1px * var(--ui-scale)) rgba(225, 243, 255, 0.72),
+        0 0 calc(14px * var(--ui-scale)) rgba(160, 214, 255, 0.72),
+        0 0 calc(32px * var(--ui-scale)) rgba(160, 214, 255, 0.34);
+    }
+    50% {
+      box-shadow:
+        0 0 0 calc(1px * var(--ui-scale)) rgba(240, 249, 255, 0.95),
+        0 0 calc(20px * var(--ui-scale)) rgba(160, 214, 255, 0.92),
+        0 0 calc(42px * var(--ui-scale)) rgba(160, 214, 255, 0.52);
+    }
+  }
+
+  .level3-item.track-card .track-cover,
+  .level3-item.photo-card .photo-thumb,
+  .level3-item.video-card .video-thumb,
+  .level3-item.game-card .game-cover {
+    transition: box-shadow 0.3s ease;
+  }
+  .level3-item.track-card.focused .track-cover,
+  .level3-item.photo-card.focused .photo-thumb,
+  .level3-item.video-card.focused .video-thumb,
+  .level3-item.game-card.focused .game-cover,
+  .video-preview.active {
+    box-shadow:
+      0 0 0 calc(1px * var(--ui-scale)) rgba(225, 243, 255, 0.72),
+      0 0 calc(14px * var(--ui-scale)) rgba(160, 214, 255, 0.72),
+      0 0 calc(32px * var(--ui-scale)) rgba(160, 214, 255, 0.34);
+    animation: pulse-z-media 2.8s ease-in-out infinite;
+  }
+
+  /* ===== ИГРОВЫЕ КАРТОЧКИ ===== */
+  .level3-item.game-card {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: calc(24px * var(--ui-scale));
+    padding: calc(12px * var(--ui-scale)) calc(18px * var(--ui-scale));
+    min-width: calc(560px * var(--ui-scale));
+    cursor: pointer;
+    opacity: 0.7;
+    transition: opacity 0.25s;
+  }
+  .level3-item.game-card.focused {
+    opacity: 1;
+    animation: none;
+    color: inherit;
+    text-shadow: none;
+  }
+  .level3-item.game-card.focused .game-title {
+    color: var(--accent);
+    text-shadow:
+      0 0 calc(7px * var(--ui-scale)) rgba(210, 238, 255, 1),
+      0 0 calc(16px * var(--ui-scale)) rgba(160, 214, 255, 0.82),
+      0 0 calc(32px * var(--ui-scale)) rgba(160, 214, 255, 0.5);
+    animation: pulse-z-text 2.8s ease-in-out infinite;
+  }
+  .game-cover {
+    width: calc(200px * var(--ui-scale));
+    height: calc(112px * var(--ui-scale));
+    border-radius: calc(4px * var(--ui-scale));
+    background: #000 center/cover no-repeat;
+    background-color: rgba(255,255,255,0.05);
+    flex-shrink: 0;
+    position: relative;
+    box-shadow: 0 0 calc(22px * var(--ui-scale)) rgba(0, 0, 0, 0.55);
+    overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .game-cover-placeholder {
+    font-size: calc(48px * var(--ui-scale));
+    color: rgba(160, 214, 255, 0.5);
+    text-shadow: 0 0 calc(16px * var(--ui-scale)) rgba(160, 214, 255, 0.5);
+    filter: drop-shadow(0 0 calc(6px * var(--ui-scale)) rgba(160, 214, 255, 0.5));
+  }
+  .game-info {
+    display: flex; flex-direction: column;
+    gap: calc(6px * var(--ui-scale));
+    min-width: 0; flex: 1;
+  }
+  .game-title {
+    font-size: calc(clamp(16px, 1.8vw, 22px) * var(--ui-scale));
+    font-weight: 600;
+    color: #fff;
+    text-shadow: 0 0 calc(8px * var(--ui-scale)) rgba(0, 0, 0, 0.6);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    transition: text-shadow 0.3s;
+  }
+  .game-meta {
+    font-size: calc(clamp(11px, 1.3vw, 14px) * var(--ui-scale));
+    color: rgba(255, 255, 255, 0.55);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.02em;
+  }
+  .level3-column.game-mode {
+    min-width: calc(600px * var(--ui-scale));
+  }
+  /* ===== ИГРОВОЙ ОВЕРЛЕЙ ===== */
+  .game-overlay {
+    position: fixed; inset: 0; z-index: 95;
+    background: #000;
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.4s ease;
+  }
+  .game-overlay.active { opacity: 1; pointer-events: auto; }
+  .game-overlay iframe {
+    width: 100%; height: 100%;
+    border: 0; display: block;
+    background: #000;
+  }
+  .game-exit-btn {
+    position: absolute;
+    top: calc(18px * var(--ui-scale));
+    right: calc(22px * var(--ui-scale));
+    width: calc(46px * var(--ui-scale));
+    height: calc(46px * var(--ui-scale));
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.55);
+    border: 1px solid rgba(160, 214, 255, 0.35);
+    color: var(--accent);
+    font-size: calc(20px * var(--ui-scale));
+    cursor: pointer;
+    z-index: 2;
+    opacity: 0.55;
+    transition: opacity 0.25s, background 0.25s, border-color 0.25s, transform 0.2s;
+    backdrop-filter: blur(6px);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .game-exit-btn:hover {
+    opacity: 1;
+    background: rgba(160, 214, 255, 0.18);
+    border-color: rgba(160, 214, 255, 0.7);
+    transform: scale(1.08);
+  }
+  .game-exit-btn.app-has-back { display: none; }
+
+  .screensaver video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+
+/* Стартовый ролик */
+.intro-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 1s ease, visibility 1s ease;
+}
+
+.intro-screen video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.intro-screen.hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.intro-skip {
+  position: absolute;
+  right: 32px;
+  bottom: 28px;
+  padding: 12px 18px;
+  color: #bfe4ff;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(191, 228, 255, 0.4);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  letter-spacing: 0.12em;
+  backdrop-filter: blur(8px);
+}
+
+.intro-skip:hover {
+  background: rgba(191, 228, 255, 0.15);
+}
+
+/* Системное сообщение после заставки — в духе настоящего интерфейса PS3. */
+.welcome-overlay {
+  position: fixed; inset: 0; z-index: 180;
+  color: #fff;
+  background: linear-gradient(180deg, rgba(2,52,104,.36), rgba(1,39,82,.46));
+  backdrop-filter: blur(11px) saturate(.68);
+  opacity: 0; visibility: hidden; pointer-events: none;
+  transition: opacity .4s ease, visibility .4s ease;
+  text-shadow: 0 1px 3px rgba(0,0,0,.75);
+}
+.welcome-overlay.active { opacity: 1; visibility: visible; pointer-events: auto; }
+.welcome-card { position: absolute; inset: 0; overflow: hidden; }
+.welcome-header {
+  position: absolute;
+  left: 0; right: 0; top: 18%;
+  padding: 0 clamp(30px, 6vw, 90px) 12px;
+  border-bottom: 1px solid rgba(235,248,255,.72);
+  font-size: clamp(16px, 1.45vw, 23px);
+  font-weight: 500;
+}
+.welcome-message {
+  position: absolute;
+  left: 50%; top: 51%;
+  width: min(720px, calc(100% - 48px));
+  transform: translate(-50%, -50%);
+  text-align: center;
+}
+.welcome-message h1 {
+  margin: 0 0 16px;
+  font-size: clamp(22px, 2.5vw, 36px);
+  font-weight: 500;
+  line-height: 1.2;
+}
+.welcome-message p {
+  max-width: 680px;
+  margin: 0 auto;
+  color: rgba(245,251,255,.9);
+  font-size: clamp(15px, 1.35vw, 20px);
+  font-weight: 450;
+  line-height: 1.5;
+}
+.welcome-btn.primary {
+  display: block;
+  margin: 18px auto 0;
+  padding: 4px 12px;
+  border: 0;
+  color: #dcfbff;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: clamp(16px, 1.45vw, 22px);
+  font-weight: 600;
+  text-shadow:
+    0 0 4px rgba(53,237,255,1),
+    0 0 12px rgba(53,237,255,.9),
+    0 0 24px rgba(53,237,255,.6);
+  transition: color .18s ease, transform .18s ease;
+}
+.welcome-btn.primary:hover,
+.welcome-btn.primary:focus-visible { color: #fff; transform: scale(1.035); outline: none; }
+.welcome-footer {
+  position: absolute;
+  left: 0; right: 0; bottom: 14%;
+  min-height: 56px;
+  padding: 14px clamp(24px, 6vw, 90px) 0;
+  border-top: 1px solid rgba(235,248,255,.72);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  gap: clamp(56px, 14vw, 210px);
+  font-size: clamp(14px, 1.25vw, 19px);
+  font-weight: 600;
+}
+.welcome-control {
+  display: inline-flex; align-items: center; gap: 9px;
+  padding: 0; border: 0; color: #fff; background: none;
+  font: inherit; text-shadow: inherit;
+}
+button.welcome-control { cursor: pointer; }
+.welcome-symbol { font-size: 1.15em; font-weight: 400; }
+body.system-message-open .xmb-wrapper,
+body.system-message-open .submenu-column,
+body.system-message-open .level3-column,
+body.system-message-open .top-bar { opacity: .06; filter: blur(8px); }
+body.system-message-open #waveCanvas,
+body.system-message-open .vignette { filter: blur(8px); transform: scale(1.025); }
+@media (max-width: 680px) {
+  .welcome-header { top: 15%; padding-left: 24px; padding-right: 24px; }
+  .welcome-message { top: 49%; }
+  .welcome-message p { font-size: 14px; }
+  .welcome-footer { bottom: 9%; gap: 46px; padding-left: 20px; padding-right: 20px; }
+}
+
+.notice-overlay {
+  position: fixed; inset: 0; z-index: 120;
+  display: grid; place-items: center;
+  padding: 24px;
+  background: rgba(0, 4, 12, 0.62);
+  backdrop-filter: blur(12px);
+  opacity: 0; visibility: hidden; pointer-events: none;
+  transition: opacity 0.2s ease, visibility 0.2s ease;
+}
+.notice-overlay.active { opacity: 1; visibility: visible; pointer-events: auto; }
+.notice-card {
+  width: min(440px, calc(100vw - 48px));
+  padding: 28px;
+  text-align: center;
+  color: #eaf7ff;
+  background: rgba(4, 17, 34, 0.92);
+  border: 1px solid rgba(191, 228, 255, 0.3);
+  border-radius: 16px;
+  box-shadow: 0 18px 70px rgba(0,0,0,.55), 0 0 40px rgba(126,201,255,.12);
+}
+.notice-card h2 { margin: 0 0 10px; font-size: 22px; font-weight: 500; }
+.notice-card p { margin: 0 0 22px; color: rgba(234,247,255,.7); line-height: 1.5; }
+.social-links {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 22px;
+  text-align: left;
+}
+.social-links[hidden] { display: none; }
+.social-link {
+  display: grid;
+  grid-template-columns: 12px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 58px;
+  padding: 10px 14px;
+  color: #eaf7ff;
+  background: rgba(191, 228, 255, 0.06);
+  border: 1px solid rgba(191, 228, 255, 0.18);
+  border-radius: 12px;
+  text-decoration: none;
+  transition: background .18s ease, border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+.social-link::before {
+  content: '';
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #bfe4ff;
+  box-shadow: 0 0 14px rgba(191, 228, 255, .75);
+}
+.social-link.youtube::before { background: #ff3155; box-shadow: 0 0 14px rgba(255,49,85,.75); }
+.social-link.telegram::before { background: #45b9ff; box-shadow: 0 0 14px rgba(69,185,255,.75); }
+.social-link:hover,
+.social-link:focus-visible {
+  outline: none;
+  background: rgba(191, 228, 255, 0.14);
+  border-color: rgba(225, 244, 255, 0.72);
+  box-shadow: 0 0 24px rgba(126, 201, 255, .18);
+  transform: translateX(3px);
+}
+.social-name { font-size: 16px; }
+.social-handle { color: rgba(234,247,255,.62); font-size: 13px; }
+.notice-card button {
+  min-width: 140px; padding: 10px 20px;
+  color: #03101f; background: #bfe4ff;
+  border: 0; border-radius: 999px; cursor: pointer; font: inherit;
+}
+
+
+</style>
+</head>
+<body class="focus-x" tabindex="-1">
+
+<div id="introScreen" class="intro-screen">
+  <video id="introVideo" autoplay muted playsinline preload="auto">
+    <source src="videos/0001-0360.mp4" type="video/mp4">
+  </video>
+  <button class="intro-skip" id="introSkip" type="button">Пропустить</button>
+</div>
+
+<section class="welcome-overlay" id="welcomeOverlay" aria-hidden="true">
+  <div class="welcome-card" role="dialog" aria-modal="true" aria-labelledby="welcomeTitle">
+    <div class="welcome-header" id="welcomeTitle">Сообщение от ded_spac</div>
+    <div class="welcome-message">
+      <h1>Добро пожаловать.</h1>
+      <p>Я — <strong>ded_spac</strong>, видеограф, монтажёр и оператор. Этот проект объединяет мои работы, творческие эксперименты и услуги, передавая любовь к автомобильной культуре и цифровой эстетике эпохи PSP.</p>
+      <button class="welcome-btn primary" id="welcomePortfolio" type="button">Открыть портфолио</button>
+    </div>
+    <div class="welcome-footer" aria-label="Управление">
+      <span class="welcome-control"><span class="welcome-symbol">✕</span> Enter</span>
+      <button class="welcome-control" id="welcomeMenu" type="button"><span class="welcome-symbol">○</span> Back</button>
+    </div>
+  </div>
+</section>
+
+<canvas id="waveCanvas"></canvas>
+<div class="vignette"></div>
+
+<div class="top-bar" id="topBar">
+  <div class="datetime">
+    <span class="date-line" id="dateLine">--/--</span>
+    <span class="clock" id="clock">--:-- --</span>
+  </div>
+  <div class="battery">
+    <svg viewBox="0 0 30 14" aria-hidden="true">
+      <rect x="1" y="1" width="26" height="12" rx="2.5"
+            fill="none" stroke="rgba(255,255,255,0.55)" stroke-width="1.2"/>
+      <rect x="27.5" y="5" width="2" height="4" rx="0.5"
+            fill="rgba(255,255,255,0.55)"/>
+      <rect id="batSeg1" class="bat-seg" x="3.5"  y="3" width="6.3" height="8" rx="1" fill="var(--accent)"/>
+      <rect id="batSeg2" class="bat-seg" x="10.8" y="3" width="6.3" height="8" rx="1" fill="var(--accent)"/>
+      <rect id="batSeg3" class="bat-seg" x="18.1" y="3" width="6.3" height="8" rx="1" fill="var(--accent)"/>
+    </svg>
+  </div>
+</div>
+
+<div class="xmb-wrapper">
+  <div class="xmb-left">
+    <div class="category-row" id="categoryRow"></div>
+  </div>
+</div>
+
+<div class="submenu-column" id="submenuColumn">
+  <div class="submenu-track" id="submenuTrack"></div>
+</div>
+
+<div class="level3-column" id="level3Column">
+  <div class="level3-track" id="level3Track"></div>
+</div>
+
+<div class="dt-editor" id="dtEditor"></div>
+
+<audio id="audioEl"></audio>
+
+<video class="video-preview" id="videoPreview" muted loop playsinline preload="metadata"></video>
+
+<div class="video-overlay" id="videoOverlay">
+  <video id="videoEl" preload="metadata"></video>
+  <div class="video-controls" id="videoControls">
+    <div class="vc-top">
+      <div class="vc-title" id="vcTitle">—</div>
+      <div class="vc-time">
+        <span id="vcCurrent">00:00</span> / <span id="vcTotal">00:00</span>
+      </div>
+    </div>
+    <div class="vc-timeline" id="vcTimeline">
+      <div class="vc-timeline-fill" id="vcFill"></div>
+    </div>
+    <div class="vc-bottom">
+      <button class="vc-btn" id="vcRewind" title="Назад 10 сек">⏪</button>
+      <button class="vc-btn" id="vcPlayPause" title="Пауза/Играть">❚❚</button>
+      <button class="vc-btn" id="vcForward" title="Вперёд 10 сек">⏩</button>
+      <button class="vc-btn" id="vcStop" title="Стоп">■</button>
+    </div>
+  </div>
+</div>
+
+<div class="photo-overlay" id="photoOverlay" aria-hidden="true">
+  <img id="photoViewerImage" alt="">
+  <div class="photo-viewer-top">
+    <span class="photo-viewer-title" id="photoViewerTitle"></span>
+    <span class="photo-viewer-counter" id="photoViewerCounter"></span>
+  </div>
+  <button class="photo-viewer-btn photo-viewer-prev" id="photoViewerPrev" type="button" aria-label="Предыдущее фото">‹</button>
+  <button class="photo-viewer-btn photo-viewer-next" id="photoViewerNext" type="button" aria-label="Следующее фото">›</button>
+  <button class="photo-viewer-btn photo-viewer-close" id="photoViewerClose" type="button" aria-label="Закрыть просмотр">✕</button>
+  <div class="photo-viewer-hint">← → листать · ○ Esc назад</div>
+</div>
+
+<div class="game-overlay" id="gameOverlay">
+  <iframe id="gameFrame" src="about:blank" frameborder="0" allowfullscreen></iframe>
+  <div id="appError" hidden style="position:absolute;inset:0;display:grid;place-items:center;padding:40px;text-align:center;color:#bfe4ff;font-size:calc(18px * var(--ui-scale));pointer-events:none"></div>
+  <button class="game-exit-btn" id="gameExitBtn" title="Выйти из игры">✕</button>
+</div>
+
+<div class="screensaver" id="screensaver">
+  <video id="screensaverVideo" autoplay muted loop playsinline>
+    <source src="videos/pousps2.mp4" type="video/mp4">
+  </video>
+</div>
+
+<div class="power-overlay" id="powerOverlay" aria-hidden="true">
+  <span id="powerMessage">Режим ожидания</span>
+</div>
+
+<div class="notice-overlay" id="noticeOverlay" aria-hidden="true">
+  <div class="notice-card" role="dialog" aria-modal="true" aria-labelledby="noticeTitle">
+    <h2 id="noticeTitle">Раздел пока недоступен</h2>
+    <p id="noticeText">Эта функция появится позже.</p>
+    <div class="social-links" id="socialLinks" aria-label="Социальные сети" hidden>
+      <a class="social-link youtube" href="https://www.youtube.com/@dedbasement" target="_blank" rel="noopener noreferrer">
+        <span class="social-name">YouTube</span>
+        <span class="social-handle">@dedbasement</span>
+      </a>
+      <a class="social-link telegram" href="https://t.me/basemeentt" target="_blank" rel="noopener noreferrer">
+        <span class="social-name">Telegram</span>
+        <span class="social-handle">@basemeentt</span>
+      </a>
+    </div>
+    <button id="noticeClose" type="button">Назад</button>
+  </div>
+</div>
+
+<script>
+
+
+/* ===== СТАРТОВЫЙ РОЛИК ===== */
+const introScreen = document.getElementById('introScreen');
+const introVideo = document.getElementById('introVideo');
+const introSkip = document.getElementById('introSkip');
+const welcomeOverlay = document.getElementById('welcomeOverlay');
+const welcomePortfolio = document.getElementById('welcomePortfolio');
+const welcomeMenu = document.getElementById('welcomeMenu');
+
+let introFinished = false;
+let welcomeActive = false;
+
+function showWelcome() {
+  welcomeActive = true;
+  document.body.classList.add('system-message-open');
+  welcomeOverlay.classList.add('active');
+  welcomeOverlay.setAttribute('aria-hidden', 'false');
+  setTimeout(() => {
+    if (welcomeActive) welcomePortfolio.focus({ preventScroll: true });
+  }, 80);
+}
+
+function closeWelcome(targetCategoryId = 'network') {
+  welcomeActive = false;
+  document.body.classList.remove('system-message-open');
+  welcomeOverlay.classList.remove('active');
+  welcomeOverlay.setAttribute('aria-hidden', 'true');
+
+  const targetCategoryIndex = categories.findIndex((category) => category.id === targetCategoryId);
+  if (targetCategoryIndex >= 0) {
+    if (state.catIndex === targetCategoryIndex) {
+      state.focus = 'x';
+      updateAll();
+    } else {
+      switchCategory(targetCategoryIndex);
+    }
+  }
+
+  document.body.focus({ preventScroll: true });
+}
+
+function openPortfolioFromWelcome() {
+  closeWelcome('video');
+}
+
+function finishIntro() {
+  if (introFinished) return;
+
+  introFinished = true;
+  introVideo.pause();
+  introSkip.disabled = true;
+  introScreen.classList.add('hidden');
+  showWelcome();
+
+  // После заставки начинаем отсчёт бездействия
+  if (typeof resetIdle === 'function') {
+    resetIdle();
+  }
+}
+
+introVideo.addEventListener('ended', finishIntro);
+
+// Если видео не загрузилось, не блокируем сайт
+introVideo.addEventListener('error', finishIntro);
+introSkip.addEventListener('click', finishIntro);
+welcomePortfolio.addEventListener('click', openPortfolioFromWelcome);
+welcomeMenu.addEventListener('click', () => closeWelcome('network'));
+document.addEventListener('keydown', (e) => {
+  if (!introFinished && ['Escape', 'Enter', ' '].includes(e.key)) {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    finishIntro();
+  }
+}, true);
+
+// Если браузер разрешил автовоспроизведение
+introVideo.play().catch(() => {
+  if (!introFinished) introSkip.focus();
+});
+
+
+/* ===== Вспомогательная функция ===== */
+function safeSrc(path) {
+  if (!path) return '';
+  return encodeURI(path);
+}
+
+/* ===== Иконки ===== */
+const ICONS = {
+  settings: 'icons/settings.png',
+  photo: 'icons/photo.png', music: 'icons/music.png', video: 'icons/video.png',
+  game: 'icons/game.png', network: 'icons/network.png',
+};
+
+const categories = [
+  { id:'settings', label:'Настройки', icon:'settings',
+    items:['Дата и время','Настройки темы','Настройки системы','Энергосбережение','О системе'] },
+  { id:'photo', label:'Фото', icon:'photo',
+    items:['Просмотр фото','Слайд-шоу','Настройки показа'] },
+  { id:'music', label:'Музыка', icon:'music', items:['Вся музыка'] },
+  { id:'video', label:'Видео', icon:'video', items:['Просмотр видео'] },
+  { id:'game', label:'Игра', icon:'game', items:['Игровые диски'] },
+  { id:'network', label:'Интернет', icon:'network', items:['some network','some store','social-net'] }
+];
+
+const state = {
+  catIndex: categories.findIndex((category) => category.id === 'network'),
+  itemIndex: 0,
+  itemIndexPerCategory: {},
+  focus: 'x'
+};
+
+const categoryRow   = document.getElementById('categoryRow');
+const submenuColumn = document.getElementById('submenuColumn');
+const submenuTrack  = document.getElementById('submenuTrack');
+const level3Column  = document.getElementById('level3Column');
+const level3Track   = document.getElementById('level3Track');
+const dtEditor      = document.getElementById('dtEditor');
+const topBar        = document.getElementById('topBar');
+const screensaverEl = document.getElementById('screensaver');
+const videoPreview  = document.getElementById('videoPreview');
+const powerOverlay  = document.getElementById('powerOverlay');
+const powerMessage  = document.getElementById('powerMessage');
+const noticeOverlay = document.getElementById('noticeOverlay');
+const noticeTitle   = document.getElementById('noticeTitle');
+const noticeText    = document.getElementById('noticeText');
+const noticeClose   = document.getElementById('noticeClose');
+const socialLinks   = document.getElementById('socialLinks');
+const socialLinkItems = [...socialLinks.querySelectorAll('.social-link')];
+
+const UI_SCALE = parseFloat(
+  getComputedStyle(document.documentElement).getPropertyValue('--ui-scale')
+) || 1;
+
+let firstPosition = true;
+let submenuJustRebuilt = false;
+let zFirstPosition = true;
+
+/* ===== Настройки ===== */
+const settings = {
+  timeFormat: '12', dateFormat: 'MM/DD/YYYY', showDate: true,
+  timezone: 'GMT +3', dst: 'Standard', dateOffsetMs: 0,
+  theme: 'Оригинальная', themeColor: 'Авто', wallpaper: true,
+  screensaver: '20 минут', panelDisplay: true, backlight: '5 минут',
+  autoSleep: '10 минут', systemName: 'PSP-1000'
+};
+const savedSettings = localStorage.getItem('xmb-settings');
+if (savedSettings) { try { Object.assign(settings, JSON.parse(savedSettings)); } catch(e){} }
+
+const TIME_ZONE_OPTIONS = [
+  'GMT 0', 'GMT +1', 'GMT +2', 'GMT +3', 'GMT +4', 'GMT +5', 'GMT +6',
+  'GMT +7', 'GMT +8', 'GMT +9', 'GMT +10', 'GMT +11', 'GMT +12'
+];
+
+function normalizeTimeZone(value) {
+  const text = String(value || '');
+  const directMatch = text.match(/(?:GMT|UTC)\s*\+?([0-9]{1,2})/i);
+  if (directMatch) {
+    const hour = Math.max(0, Math.min(12, Number(directMatch[1])));
+    return hour === 0 ? 'GMT 0' : `GMT +${hour}`;
+  }
+
+  const legacyOffsets = {
+    'Europe/London': 0, 'Europe/Berlin': 1, 'Europe/Moscow': 3,
+    'Asia/Dubai': 4, 'Asia/Tokyo': 9, 'Australia/Sydney': 10
+  };
+  const hour = legacyOffsets[text] ?? 3;
+  return hour === 0 ? 'GMT 0' : `GMT +${hour}`;
+}
+
+settings.timezone = normalizeTimeZone(settings.timezone);
+
+function saveSettings() { localStorage.setItem('xmb-settings', JSON.stringify(settings)); }
+
+/* ===== Часы ===== */
+function getXmbNow() {
+  const realNow = new Date();
+  const offset = settings.dateOffsetMs || 0;
+  const now = new Date(realNow.getTime() + offset);
+  const targetOffsetH = Number(settings.timezone.match(/\+([0-9]{1,2})/)?.[1] || 0);
+  const localOffsetH = -realNow.getTimezoneOffset() / 60;
+  const dstH = settings.dst === 'Daylight Saving' ? 1 : 0;
+  return new Date(now.getTime() + (targetOffsetH - localOffsetH + dstH) * 3600 * 1000);
+}
+
+function updateClock() {
+  const tzNow = getXmbNow();
+
+  let h = tzNow.getHours();
+  const mm = String(tzNow.getMinutes()).padStart(2, '0');
+  let timeStr;
+  if (settings.timeFormat === '12') {
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12 || 12;
+    timeStr = `${h}:${mm} ${ampm}`;
+  } else {
+    timeStr = `${String(h).padStart(2,'0')}:${mm}`;
+  }
+  document.getElementById('clock').textContent = timeStr;
+
+  const dateEl = document.getElementById('dateLine');
+  if (!settings.showDate) { dateEl.textContent = ''; dateEl.style.display = 'none'; }
+  else {
+    dateEl.style.display = '';
+    const mo2 = String(tzNow.getMonth()+1).padStart(2,'0');
+    const dd2 = String(tzNow.getDate()).padStart(2,'0');
+    const yy = tzNow.getFullYear();
+    switch (settings.dateFormat) {
+      case 'M/D':
+      case 'MM/DD/YYYY': dateEl.textContent = `${mo2}/${dd2}/${yy}`; break;
+      case 'D/M':
+      case 'DD/MM/YYYY': dateEl.textContent = `${dd2}/${mo2}/${yy}`; break;
+      case 'YYYY/MM/DD': dateEl.textContent = `${yy}/${mo2}/${dd2}`; break;
+      default:           dateEl.textContent = `${mo2}/${dd2}/${yy}`;
+    }
+  }
+}
+updateClock();
+setInterval(updateClock, 1000);
+
+/* ===== Батарея ===== */
+let batteryBlinkTimer = null;
+function setBatteryVisual(level, charging) {
+  const segs = [
+    document.getElementById('batSeg1'),
+    document.getElementById('batSeg2'),
+    document.getElementById('batSeg3')
+  ];
+  let color = 'var(--accent)';
+  if (level <= 0.15)      color = '#ff7a7a';
+  else if (level <= 0.35) color = '#ffd97a';
+
+  let filled;
+  if (level <= 0)          filled = 0;
+  else if (level < 0.34)   filled = 1;
+  else if (level < 0.67)   filled = 2;
+  else                     filled = 3;
+
+  segs.forEach((s, i) => {
+    if (i < filled) { s.setAttribute('fill', color); s.style.opacity = '1'; }
+    else { s.style.opacity = '0.15'; }
+  });
+
+  clearInterval(batteryBlinkTimer);
+  if (charging) {
+    let phase = 0;
+    batteryBlinkTimer = setInterval(() => {
+      phase = (phase + 1) % 3;
+      const show = phase + 1;
+      segs.forEach((s, i) => {
+        if (i < show) { s.setAttribute('fill', 'var(--accent)'); s.style.opacity = '1'; }
+        else { s.style.opacity = '0.15'; }
+      });
+    }, 500);
+  }
+}
+
+if (navigator.getBattery) {
+  navigator.getBattery().then(b => {
+    setBatteryVisual(b.level, b.charging);
+    b.addEventListener('levelchange', () => setBatteryVisual(b.level, b.charging));
+    b.addEventListener('chargingchange', () => setBatteryVisual(b.level, b.charging));
+  }).catch(() => setBatteryVisual(1, false));
+} else setBatteryVisual(1, false);
+
+/* ===== Палитра темы ===== */
+const COLOR_PALETTE = {
+  'Авто':       null,
+  'Синий':      [59, 95, 208],
+  'Красный':    [208, 58, 58],
+  'Зелёный':    [74, 194, 108],
+  'Жёлтый':     [245, 209, 58],
+  'Фиолетовый': [168, 122, 224],
+  'Розовый':    [247, 168, 200],
+  'Бирюзовый':  [90, 211, 208],
+  'Оранжевый':  [240, 160, 90],
+  'Серый':      [180, 180, 185],
+  'Коричневый': [138, 90, 58],
+  'Чёрный':     [40, 40, 45],
+  'Белый':      [230, 235, 240]
+};
+const MONTH_COLORS = [
+  [232, 236, 240], [245, 209, 58], [155, 224, 122], [247, 168, 200],
+  [74, 194, 108], [168, 122, 224], [90, 211, 208], [59, 95, 208],
+  [126, 58, 138], [240, 160, 90], [138, 90, 58], [208, 58, 58]
+];
+
+function getCurrentWaveRGB() {
+  let rgb;
+  if (settings.themeColor === 'Авто') rgb = MONTH_COLORS[new Date().getMonth()];
+  else rgb = COLOR_PALETTE[settings.themeColor] || COLOR_PALETTE['Синий'];
+  const lum = (rgb[0] + rgb[1] + rgb[2]) / 3;
+  if (lum < 80) rgb = rgb.map(c => Math.min(255, c + 110));
+  return rgb;
+}
+
+/* ===== Рендер X ===== */
+function renderCategories() {
+  categoryRow.innerHTML = '';
+  categories.forEach((cat, idx) => {
+    const el = document.createElement('div');
+    el.className = 'category' + (idx === state.catIndex ? ' focused' : '');
+    el.innerHTML = `
+      <div class="icon-wrap"><img src="${ICONS[cat.icon]}" alt=""></div>
+      <div class="label">${cat.label}</div>`;
+    el.addEventListener('click', () => {
+      if (state.catIndex === idx) return;
+      switchCategory(idx);
+    });
+    categoryRow.appendChild(el);
+  });
+}
+
+/* ===== Рендер Y ===== */
+function renderSubmenu() {
+  const cat = categories[state.catIndex];
+  const existing = submenuTrack.querySelectorAll('.submenu-item');
+  const needRebuild =
+    existing.length !== cat.items.length ||
+    (existing[0] && existing[0].dataset.cat !== cat.id);
+
+  if (needRebuild) {
+    submenuTrack.innerHTML = '';
+    cat.items.forEach((item, idx) => {
+      const el = document.createElement('div');
+      el.className = 'submenu-item';
+      el.dataset.cat = cat.id;
+      el.innerHTML = `<img class="item-icon" src="icons/memry.png" alt=""><span>${item}</span>`;
+      el.addEventListener('click', () => {
+        state.itemIndex = idx; state.focus = 'y'; updateAll();
+        activateYItem(item);
+      });
+      submenuTrack.appendChild(el);
+    });
+    submenuJustRebuilt = true;
+  }
+
+  submenuTrack.querySelectorAll('.submenu-item').forEach((el, i) => {
+    el.classList.toggle('focused', i === state.itemIndex);
+  });
+}
+
+/* ===== Позиция Y ===== */
+function positionSubmenu() {
+  const activeCatEl = categoryRow.querySelectorAll('.category')[state.catIndex];
+  if (!activeCatEl) return;
+  const iconEl = activeCatEl.querySelector('.icon-wrap');
+  if (!iconEl) return;
+
+  const targetX = window.innerWidth * 0.20;
+  const rawTransform = getComputedStyle(categoryRow).transform;
+  const currentT = (rawTransform === 'none') ? 0
+    : new DOMMatrixReadOnly(rawTransform).m41;
+  const rowVisualLeft = categoryRow.getBoundingClientRect().left;
+  const rowLayoutLeft = rowVisualLeft - currentT;
+  const iconLayoutCenter = rowLayoutLeft + activeCatEl.offsetLeft + activeCatEl.offsetWidth / 2;
+  categoryRow.style.transform = `translateX(${targetX - iconLayoutCenter}px)`;
+
+  const iconRect = iconEl.getBoundingClientRect();
+  const visualWidth = iconRect.width;
+  let submenuLeft = targetX - visualWidth / 2;
+  const minLeft = 20 * UI_SCALE;
+  if (submenuLeft < minLeft) submenuLeft = minLeft;
+
+  const catRect = activeCatEl.getBoundingClientRect();
+  const labelRect = activeCatEl.querySelector('.label')?.getBoundingClientRect();
+  const catTopVp = catRect.top;
+  const categoryBottomVp = Math.max(catRect.bottom, labelRect?.bottom || catRect.bottom);
+  // Отступ рассчитан по видимой части иконки (в memry.png есть прозрачные поля),
+  // чтобы вертикальный ритм совпадал с референсом XMB.
+  const topBase = categoryBottomVp + 28 * UI_SCALE;
+
+  const items = submenuTrack.querySelectorAll('.submenu-item');
+  let offsetY = 0;
+  if (items[state.itemIndex]) offsetY = -items[state.itemIndex].offsetTop;
+  const submenuTopVp = topBase + offsetY;
+
+  if (firstPosition) submenuColumn.style.transition = 'none';
+  submenuColumn.style.left = submenuLeft + 'px';
+  submenuColumn.style.top  = submenuTopVp + 'px';
+  submenuColumn.style.visibility = 'visible';
+  if (firstPosition) {
+    void submenuColumn.offsetWidth;
+    submenuColumn.style.transition = '';
+    firstPosition = false;
+  }
+
+  const zoneTopVp = catTopVp - 10 * UI_SCALE;
+  const jumpHeight = zoneTopVp - topBase;
+
+  if (submenuJustRebuilt) items.forEach(el => el.style.transition = 'none');
+  items.forEach((item, i) => {
+    if (i === state.itemIndex) item.style.transform = '';
+    else if (i < state.itemIndex) item.style.transform = `translateY(${jumpHeight}px)`;
+    else item.style.transform = '';
+  });
+  if (submenuJustRebuilt) {
+    void submenuTrack.offsetWidth;
+    items.forEach(el => el.style.transition = '');
+    submenuJustRebuilt = false;
+  }
+}
+
+/* ===== МУЗЫКА ===== */
+const MUSIC_TRACKS = [
+  { name: 'DRIVER A', artist: '$NOT', date: '15/08/2025', cover: 'music/covers/$NOT - DRIVER A.jpeg', file: 'music/$NOT - DRIVER A.mp3' },
+  { name: 'LEGACY', artist: 'PIXY', date: '15/08/2024', cover: 'music/covers/PIXY_-_LEGACY.jpeg', file: 'music/PIXY_-_LEGACY_(SkySound.cc).mp3' },
+  { name: 'Dreams, Fairytales, Fantasies', artist: 'A$AP Ferg feat. Brent Faiyaz, Salaam Remi ', date: '15/08/2024', cover: 'music/covers/Dreams, Fairytales, Fantasies.jpg', file: 'music/A_AP_Ferg_feat._Brent_Faiyaz_Salaam_Remi_-_Dreams_Fairytales_Fantasies_(SkySound.cc).mp3' },
+  { name: 'Place', artist: 'Playboi Carti', date: '15/08/2024', cover: 'music/covers/place playboi carti.jpg', file: 'music/Playboi Carti - Place.mp3' },
+  { name: 'Pink & White', artist: 'Frank Ocean', date: '15/08/2024', cover: 'music/covers/Frank Ocean - Pink & White.jpg', file: 'music/Frank Ocean - Pink & White.mp3' },
+  { name: '1AM', artist: 'Playboi Carti', date: '15/08/2024', cover: 'music/covers/1AM - Playboi Carti.jpeg', file: 'music/1AM - Playboi Carti.mp3' },
+  { name: '7AM', artist: 'Playboi Carti', date: '15/08/2024', cover: 'music/covers/7AM   Playboi Carti.jpeg', file: 'music/7AM   Playboi Carti.mp3' }
+];
+
+/* ===== ФОТО ===== */
+const PHOTO_LIBRARY = [
+  'IMG_5043.JPG', 'IMG_5110.JPG', 'IMG_5119.JPG', 'IMG_5162.JPG',
+  'IMG_5172.JPG', 'IMG_5218.JPG', 'IMG_5225.JPG', 'IMG_5229.JPG',
+  'IMG_5234.JPG', 'IMG_5235.JPG', 'IMG_5237.JPG', 'IMG_5243.JPG',
+  'IMG_5248.JPG', 'IMG_5252.JPG', 'IMG_5272.JPG', 'IMG_5273.JPG',
+  'IMG_5282.JPG', 'IMG_5285.JPG', 'IMG_5286.JPG', 'IMG_5292.JPG',
+  'IMG_5298.JPG', 'IMG_5340.JPG', 'IMG_5345.JPG', 'IMG_5361.JPG'
+].map((file) => ({
+  name: file.replace(/\.[^.]+$/, ''),
+  file: 'photos/' + file
+}));
+
+/* ===== ВИДЕО ===== */
+const VIDEO_LIBRARY = [
+  { name: 'в меру шир', date: '01/01/2024', duration: '02:04', thumb: '', file: 'videos/в меру шир.mp4' },
+  { name: 'toyotacamry', date: '15/03/2024', duration: '01:19', thumb: '', file: 'videos/toyotacamry.MP4' }
+];
+
+/* ===== БИБЛИОТЕКА ИГР ===== */
+const GAME_LIBRARY = [
+  { name: 'Tsukuba Touge', date: '2026', genre: 'Racing', cover: 'games/Pu8RYG77PAI.jpg', file: 'games/tsukuba-touge.html' },
+
+{ name: 'The hero is already on the way', date: '2026', genre: 'Racing', cover: 'games/222cf085c6b62be165e10e599407c617.jpg', file: 'games/game.html' }
+];
+
+/* ===== ПРИЛОЖЕНИЯ (пункты уровня Y, открываются сразу на весь экран) ===== */
+const APP_LIBRARY = {
+  'some store': 'store/some_store.html',
+  'some network': 'https://www.google.com/'
+};
+
+/* ===== УРОВЕНЬ 3 (Z) ===== */
+const level3Menus = {
+  'Просмотр фото': PHOTO_LIBRARY.map((photo, i) => ({
+    id: 'photo_' + i, label: photo.name, file: photo.file,
+    photoIndex: i, type: 'photo'
+  })),
+
+  'Вся музыка': MUSIC_TRACKS.map((t, i) => ({
+    id: 'track_' + i, label: t.name, artist: t.artist,
+    file: t.file, trackIndex: i, type: 'track'
+  })),
+
+  'Просмотр видео': VIDEO_LIBRARY.map((v, i) => ({
+    id: 'video_' + i, label: v.name, date: v.date,
+    duration: v.duration, thumb: v.thumb, file: v.file,
+    videoIndex: i, type: 'video'
+  })),
+
+  'Игровые диски': GAME_LIBRARY.map((g, i) => ({
+    id: 'game_' + i, label: g.name, date: g.date,
+    genre: g.genre, cover: g.cover, file: g.file,
+    gameIndex: i, type: 'game'
+  })),
+
+
+
+  'Дата и время': [
+    { id: 'datetime', label: 'Дата и время', type: 'datetime' },
+    { id: 'dateFormat', label: 'Формат даты', type: 'list',
+      options: ['YYYY/MM/DD', 'MM/DD/YYYY', 'DD/MM/YYYY'],
+      get: () => {
+        if (settings.dateFormat === 'D/M' || settings.dateFormat === 'DD/MM/YYYY') return 'DD/MM/YYYY';
+        if (settings.dateFormat === 'M/D' || settings.dateFormat === 'MM/DD/YYYY') return 'MM/DD/YYYY';
+        return settings.dateFormat === 'YYYY/MM/DD' ? 'YYYY/MM/DD' : 'MM/DD/YYYY';
+      },
+      set: (v) => {
+        settings.dateFormat = v;
+      }
+    },
+    { id: 'timeFormat', label: 'Формат времени', type: 'list',
+      options: ['12-Hour', '24-Hour'],
+      get: () => settings.timeFormat === '12' ? '12-Hour' : '24-Hour',
+      set: (v) => settings.timeFormat = v === '12-Hour' ? '12' : '24'
+    },
+    { id: 'timezone', label: 'Часовой пояс', type: 'list',
+      options: TIME_ZONE_OPTIONS,
+      get: () => settings.timezone,
+      set: (v) => settings.timezone = v
+    },
+    { id: 'dst', label: 'Летнее время', type: 'list',
+      options: ['Standard', 'Daylight Saving'],
+      get: () => settings.dst,
+      set: (v) => settings.dst = v
+    },
+    { id: 'reset', label: 'Сбросить время', type: 'action',
+      action: () => {
+        settings.dateOffsetMs = 0;
+        settings.timezone = 'GMT +3';
+        settings.dst = 'Standard';
+        saveSettings(); updateClock(); renderLevel3(); positionLevel3();
+      }
+    }
+  ],
+
+  'Настройки темы': [
+    { id: 'theme', label: 'Тема', type: 'list',
+      options: ['Оригинальная', 'Классическая', 'Пользовательская'],
+      get: () => settings.theme, set: (v) => settings.theme = v },
+    { id: 'color', label: 'Цвет', type: 'list',
+      options: ['Авто','Синий','Красный','Зелёный','Жёлтый','Фиолетовый','Розовый',
+                'Бирюзовый','Оранжевый','Серый','Коричневый','Чёрный','Белый'],
+      get: () => settings.themeColor, set: (v) => settings.themeColor = v },
+    { id: 'wallpaper', label: 'Обои', type: 'list',
+      options: ['Вкл', 'Выкл'],
+      get: () => settings.wallpaper ? 'Вкл' : 'Выкл',
+      set: (v) => settings.wallpaper = (v === 'Вкл') }
+  ],
+
+  'Настройки системы': [
+    { id: 'screensaver', label: 'Заставка', type: 'list',
+      options: ['Выкл', '10 минут', '20 минут', '30 минут'],
+      get: () => settings.screensaver, set: (v) => settings.screensaver = v },
+    { id: 'panelDisplay', label: 'Отображение панели управления', type: 'list',
+      options: ['Вкл', 'Выкл'],
+      get: () => settings.panelDisplay ? 'Вкл' : 'Выкл',
+      set: (v) => {
+        settings.panelDisplay = (v === 'Вкл');
+        topBar.classList.toggle('hidden', !settings.panelDisplay);
+      } }
+  ],
+
+  'Энергосбережение': [
+    { id: 'backlight', label: 'Автоматическое отключение подсветки', type: 'list',
+      options: ['Выкл', '2 минуты', '5 минут', '10 минут'],
+      get: () => settings.backlight, set: (v) => settings.backlight = v },
+    { id: 'autoSleep', label: 'Автоматический режим ожидания', type: 'list',
+      options: ['Выкл', '5 минут', '10 минут', '15 минут'],
+      get: () => settings.autoSleep, set: (v) => settings.autoSleep = v }
+  ],
+
+  'О системе': [
+    { id: 'version', label: 'Версия ПО',      type: 'info', value: '6.61 PRO-C' },
+    { id: 'name',    label: 'Имя системы',    type: 'info', value: settings.systemName },
+    { id: 'mac',     label: 'MAC-адрес',      type: 'info', value: '00:1D:BA:XX:XX:XX' },
+    { id: 'model',   label: 'Модель',         type: 'info', value: 'PSP-1000' }
+  ]
+};
+
+const PLACEHOLDER_TEXT = {
+  'Слайд-шоу': 'Слайд-шоу станет доступно после добавления фотографий.',
+  'Настройки показа': 'Настройки показа появятся вместе с разделом фотографий.',
+  'some network': 'Сетевой раздел пока готовится.',
+  'social-net': 'Социальный раздел пока готовится.'
+};
+
+function showNotice(label) {
+  const isSocial = label === 'social-net';
+
+  noticeTitle.textContent = isSocial ? 'social net' : label;
+  noticeText.textContent = isSocial
+    ? 'Выберите площадку'
+    : (PLACEHOLDER_TEXT[label] || 'Эта функция появится позже.');
+  socialLinks.hidden = !isSocial;
+  noticeOverlay.classList.add('active');
+  noticeOverlay.setAttribute('aria-hidden', 'false');
+  (isSocial ? socialLinkItems[0] : noticeClose).focus({ preventScroll: true });
+}
+
+function closeNotice() {
+  noticeOverlay.classList.remove('active');
+  noticeOverlay.setAttribute('aria-hidden', 'true');
+  document.body.focus({ preventScroll: true });
+}
+
+function activateYItem(label) {
+  const appTarget = APP_LIBRARY[label];
+
+  if (appTarget) {
+    // Внешние сайты нельзя надёжно показывать во встроенном iframe.
+    // Открываем их отдельной вкладкой, а локальные приложения — внутри XMB.
+    if (/^https?:\/\//i.test(appTarget)) {
+      window.open(appTarget, '_blank', 'noopener,noreferrer');
+    } else {
+      openApp(appTarget);
+    }
+  } else if (level3Menus[label]) {
+    openLevel3();
+  } else {
+    showNotice(label);
+  }
+}
+
+noticeClose.addEventListener('click', closeNotice);
+noticeOverlay.addEventListener('click', (e) => {
+  if (e.target === noticeOverlay) closeNotice();
+});
+
+let zItemIndex = 0;
+let zListIndex = 0;
+let zMode = 'items';
+let listFirstPosition = true;
+
+function getTrackCoverStyle(track, idx) {
+  if (track.cover) return `background-image:url('${safeSrc(track.cover)}');`;
+  const h1 = (idx * 137) % 360;
+  const h2 = (h1 + 60) % 360;
+  const h3 = (h1 + 180) % 360;
+  return `background:linear-gradient(135deg,
+    hsl(${h1}, 55%, 45%),
+    hsl(${h2}, 65%, 30%) 50%,
+    hsl(${h3}, 50%, 25%) 100%);`;
+}
+
+function getVideoThumbStyle(video, idx) {
+  if (video.thumb) return `background-image:url('${safeSrc(video.thumb)}');`;
+  const h1 = (idx * 97) % 360;
+  const h2 = (h1 + 80) % 360;
+  return `background:linear-gradient(135deg,
+    hsl(${h1}, 30%, 20%),
+    hsl(${h2}, 40%, 12%) 100%);`;
+}
+
+function getGameCoverStyle(game, idx) {
+  if (game.cover) return `background-image:url('${safeSrc(game.cover)}');`;
+  const h1 = (idx * 73 + 200) % 360;
+  const h2 = (h1 + 100) % 360;
+  return `background:linear-gradient(135deg,
+    hsl(${h1}, 45%, 30%),
+    hsl(${h2}, 55%, 15%) 100%);`;
+}
+
+function renderLevel3() {
+  const cat = categories[state.catIndex];
+  const yLabel = cat.items[state.itemIndex];
+  const menu = level3Menus[yLabel];
+  if (!menu) { closeLevel3(); return; }
+
+  const isPhotoList = menu.length > 0 && menu[0].type === 'photo';
+  const isTrackList = menu.length > 0 && menu[0].type === 'track';
+  const isVideoList = menu.length > 0 && menu[0].type === 'video';
+  const isGameList  = menu.length > 0 && menu[0].type === 'game';
+  level3Column.classList.toggle('photo-mode', isPhotoList);
+  level3Column.classList.toggle('track-mode', isTrackList);
+  level3Column.classList.toggle('video-mode', isVideoList);
+  level3Column.classList.toggle('game-mode',  isGameList);
+
+  level3Track.innerHTML = '';
+
+  if (zMode === 'items') {
+    menu.forEach((item, idx) => {
+      const el = document.createElement('div');
+
+      if (item.type === 'photo') {
+        el.className = 'level3-item photo-card' + (idx === zItemIndex ? ' focused' : '');
+        const photo = PHOTO_LIBRARY[item.photoIndex];
+
+        el.innerHTML = `
+          <div class="photo-thumb" style="background-image:url('${safeSrc(photo.file)}')"></div>
+          <div class="photo-info">
+            <div class="photo-title">${photo.name}</div>
+            <div class="photo-meta">${idx + 1} / ${PHOTO_LIBRARY.length}</div>
+          </div>`;
+        el.addEventListener('click', () => { zItemIndex = idx; activateLevel3Item(); });
+
+      } else if (item.type === 'track') {
+        el.className = 'level3-item track-card' + (idx === zItemIndex ? ' focused' : '');
+        const track = MUSIC_TRACKS[item.trackIndex];
+        const coverStyle = getTrackCoverStyle(track, item.trackIndex);
+        const isCurrent = item.trackIndex === currentTrackIndex;
+        const titleText = track.artist ? `${track.artist} - ${track.name}` : track.name;
+        let coverClass = 'track-cover';
+        if (isCurrent) coverClass += isPlaying ? ' playing' : ' paused';
+
+        el.innerHTML = `
+          <div class="${coverClass}" style="${coverStyle}"></div>
+          <div class="track-info">
+            <div class="track-title">${titleText}</div>
+            <div class="track-date">${track.date || ''}</div>
+          </div>`;
+        el.addEventListener('click', () => { zItemIndex = idx; activateLevel3Item(); });
+
+      } else if (item.type === 'video') {
+        el.className = 'level3-item video-card' + (idx === zItemIndex ? ' focused' : '');
+        const video = VIDEO_LIBRARY[item.videoIndex];
+        const thumbStyle = getVideoThumbStyle(video, item.videoIndex);
+
+        el.innerHTML = `
+          <div class="video-thumb" style="${thumbStyle}"></div>
+          <div class="video-info">
+            <div class="video-title">${video.name}</div>
+            <div class="video-meta">${video.date || ''}${video.duration ? '  ·  ' + video.duration : ''}</div>
+          </div>`;
+        el.addEventListener('click', () => { zItemIndex = idx; activateLevel3Item(); });
+
+      } else if (item.type === 'game') {
+        el.className = 'level3-item game-card' + (idx === zItemIndex ? ' focused' : '');
+        const game = GAME_LIBRARY[item.gameIndex];
+        const coverStyle = getGameCoverStyle(game, item.gameIndex);
+        const coverInner = game.cover ? '' : '<div class="game-cover-placeholder">🎮</div>';
+
+        el.innerHTML = `
+          <div class="game-cover" style="${coverStyle}">${coverInner}</div>
+          <div class="game-info">
+            <div class="game-title">${game.name}</div>
+            <div class="game-meta">${game.date || ''}${game.genre ? '  ·  ' + game.genre : ''}</div>
+          </div>`;
+        el.addEventListener('click', () => { zItemIndex = idx; activateLevel3Item(); });
+
+      } else {
+        el.className = 'level3-item' + (idx === zItemIndex ? ' focused' : '')
+                      + (item.type === 'info' ? ' info' : '');
+        let val = '';
+        if (item.type === 'list') val = item.get();
+        else if (item.type === 'info') val = item.value;
+        el.innerHTML = `<span class="lbl">${item.label}</span><span class="val">${val}</span>`;
+        el.addEventListener('click', () => { zItemIndex = idx; activateLevel3Item(); });
+      }
+
+      level3Track.appendChild(el);
+    });
+  } else {
+    const item = menu[zItemIndex];
+    item.options.forEach((opt, idx) => {
+      const el = document.createElement('div');
+      el.className = 'level3-item' + (idx === zListIndex ? ' focused' : '');
+      const cur = item.get() === opt;
+      el.innerHTML = `<span class="lbl">${opt}</span><span class="val">${cur ? '●' : ''}</span>`;
+      el.addEventListener('click', () => {
+        item.set(opt); saveSettings(); updateClock();
+        zMode = 'items'; state.focus = 'z';
+        renderLevel3(); positionLevel3(); updateAll();
+      });
+      level3Track.appendChild(el);
+    });
+  }
+  level3Column.style.visibility = 'visible';
+  updateVideoPreview();
+}
+
+function openLevel3() {
+  const cat = categories[state.catIndex];
+  const yLabel = cat.items[state.itemIndex];
+  if (!level3Menus[yLabel]) return false;
+
+  zItemIndex = 0; zListIndex = 0; zMode = 'items';
+  state.focus = 'z'; zFirstPosition = true; listFirstPosition = true;
+  renderLevel3(); positionLevel3(); updateAll();
+  return true;
+}
+
+function closeLevel3() {
+  level3Column.style.visibility = 'hidden';
+  dtEditor.style.visibility = 'hidden';
+  state.focus = 'y';
+  hideVideoPreview();
+  updateAll();
+}
+
+function positionLevel3() {
+  const activeYEl = submenuTrack.querySelectorAll('.submenu-item')[state.itemIndex];
+  if (!activeYEl) return;
+
+  const yLeft  = parseFloat(submenuColumn.style.left) || 0;
+  const yWidth = submenuColumn.offsetWidth;
+  const gap = 15 * UI_SCALE;
+  const zLeft = yLeft + yWidth + gap;
+
+  const yRect = activeYEl.getBoundingClientRect();
+  const yCenter = yRect.top + yRect.height / 2;
+
+  const zItems = level3Track.querySelectorAll('.level3-item');
+  const activeIndex = zMode === 'list' ? zListIndex : zItemIndex;
+  const activeZEl = zItems[activeIndex];
+  if (!activeZEl) return;
+
+  const zCenterOffset = activeZEl.offsetTop + activeZEl.offsetHeight / 2;
+  const zTop = yCenter - zCenterOffset;
+
+  const isFirstPosition = zMode === 'list' ? listFirstPosition : zFirstPosition;
+  if (isFirstPosition) {
+    level3Column.style.transition = 'none';
+    level3Column.style.left = zLeft + 'px';
+    level3Column.style.top  = zTop + 'px';
+    void level3Column.offsetWidth;
+    level3Column.style.transition = '';
+    if (zMode === 'list') listFirstPosition = false;
+    else zFirstPosition = false;
+  } else {
+    level3Column.style.left = zLeft + 'px';
+    level3Column.style.top  = zTop + 'px';
+  }
+}
+
+function activateLevel3Item() {
+  const cat = categories[state.catIndex];
+  const yLabel = cat.items[state.itemIndex];
+  const menu = level3Menus[yLabel];
+  const item = menu[zItemIndex];
+  if (!item) return;
+
+  if (item.type === 'list') {
+    zMode = 'list'; listFirstPosition = true;
+    state.focus = 'z-list';
+    const cur = item.get();
+    zListIndex = Math.max(0, item.options.indexOf(cur));
+    renderLevel3(); positionLevel3(); updateAll();
+  } else if (item.type === 'datetime') {
+    openDateTimeEditor();
+  } else if (item.type === 'photo') {
+    openPhotoViewer(item.photoIndex);
+    renderLevel3();
+  } else if (item.type === 'track') {
+    if (item.trackIndex === currentTrackIndex) togglePlay();
+    else loadTrack(item.trackIndex, true);
+    renderLevel3();
+  } else if (item.type === 'video') {
+    openVideoPlayer(item.videoIndex);
+    renderLevel3();
+  } else if (item.type === 'game') {
+    openGame(item.gameIndex);
+    renderLevel3();
+  } else if (item.type === 'action') {
+    if (item.action) item.action();
+  }
+}
+
+/* ===== ПРЕВЬЮ ВИДЕО ===== */
+function shouldShowVideoPreview() {
+  if (videoPlayerActive) return false;
+  if (gamePlayerActive) return false;
+  if (screensaverActive) return false;
+  if (state.focus !== 'z') return false;
+  if (zMode !== 'items') return false;
+
+  const cat = categories[state.catIndex];
+  const yLabel = cat.items[state.itemIndex];
+  if (yLabel !== 'Просмотр видео') return false;
+
+  const menu = level3Menus[yLabel];
+  const item = menu && menu[zItemIndex];
+  return item && item.type === 'video';
+}
+
+function hideVideoPreview() {
+  videoPreview.classList.remove('active');
+  if (!videoPreview.paused) videoPreview.pause();
+}
+
+function updateVideoPreview() {
+  if (!shouldShowVideoPreview()) {
+    hideVideoPreview();
+    return;
+  }
+  const yLabel = categories[state.catIndex].items[state.itemIndex];
+  const menu = level3Menus[yLabel];
+  const item = menu[zItemIndex];
+  const video = VIDEO_LIBRARY[item.videoIndex];
+  const src = safeSrc(video.file);
+
+  if (videoPreview.dataset.src !== src) {
+    videoPreview.dataset.src = src;
+    videoPreview.src = src;
+    try { videoPreview.currentTime = 0; } catch(e) {}
+  }
+  videoPreview.classList.add('active');
+  if (videoPreview.paused) {
+    videoPreview.play().catch(() => {});
+  }
+}
+
+function tickVideoPreview() {
+  if (videoPreview.classList.contains('active') && shouldShowVideoPreview()) {
+    const cards = level3Track.querySelectorAll('.video-card');
+    const card = cards[zItemIndex];
+    if (card) {
+      const thumb = card.querySelector('.video-thumb');
+      if (thumb) {
+        const r = thumb.getBoundingClientRect();
+        videoPreview.style.left   = r.left + 'px';
+        videoPreview.style.top    = r.top + 'px';
+        videoPreview.style.width  = r.width + 'px';
+        videoPreview.style.height = r.height + 'px';
+      }
+    }
+  }
+  requestAnimationFrame(tickVideoPreview);
+}
+requestAnimationFrame(tickVideoPreview);
+
+/* ===== Редактор даты-времени ===== */
+let dtFieldIndex = 0;
+let dtBase = null;
+
+function openDateTimeEditor() {
+  const current = getXmbNow();
+  dtBase = {
+    year: current.getFullYear(), month: current.getMonth() + 1,
+    day: current.getDate(), hour: current.getHours(), minute: current.getMinutes()
+  };
+  dtFieldIndex = 0;
+  state.focus = 'z-edit';
+  renderDateTimeEditor(); updateAll();
+}
+
+function renderDateTimeEditor() {
+  const pad = (n) => String(n).padStart(2, '0');
+  const fields = [
+    { txt: String(dtBase.year) }, { txt: pad(dtBase.month) },
+    { txt: pad(dtBase.day) }, { txt: pad(dtBase.hour) },
+    { txt: pad(dtBase.minute) }
+  ];
+  let html = '';
+  fields.forEach((f, i) => {
+    if (i === 3) html += `<div class="dt-sep">:</div>`;
+    html += `<div class="dt-cell${i === dtFieldIndex ? ' focused' : ''}" data-i="${i}">${f.txt}</div>`;
+  });
+  dtEditor.innerHTML = html;
+  dtEditor.querySelectorAll('.dt-cell').forEach(cell => {
+    cell.addEventListener('click', () => {
+      dtFieldIndex = parseInt(cell.dataset.i);
+      renderDateTimeEditor();
+    });
+  });
+  dtEditor.style.visibility = 'visible';
+}
+
+function positionDateTimeEditor() {
+  const zLeft = parseFloat(level3Column.style.left) || 0;
+  const zTop  = parseFloat(level3Column.style.top)  || 0;
+  dtEditor.style.transition = 'none';
+  dtEditor.style.left = zLeft + 'px';
+  dtEditor.style.top  = (zTop + 40 * UI_SCALE) + 'px';
+  dtEditor.style.visibility = 'visible';
+  void dtEditor.offsetWidth;
+  dtEditor.style.transition = '';
+}
+
+function closeDateTimeEditor() {
+  dtEditor.style.visibility = 'hidden';
+  state.focus = 'z';
+  renderLevel3(); positionLevel3(); updateAll();
+}
+
+function applyDateTimeEditor() {
+  const current = getXmbNow();
+  const newDate = new Date(dtBase.year, dtBase.month - 1, dtBase.day,
+                            dtBase.hour, dtBase.minute, 0, 0);
+  settings.dateOffsetMs += newDate.getTime() - current.getTime();
+  saveSettings(); updateClock(); closeDateTimeEditor();
+}
+
+function changeDtField(delta) {
+  const limits = {
+    year: { min: 2000, max: 2099 }, month: { min: 1, max: 12 },
+    day:  { min: 1, max: 31 }, hour: { min: 0, max: 23 },
+    minute: { min: 0, max: 59 }
+  };
+  const keys = ['year','month','day','hour','minute'];
+  const key = keys[dtFieldIndex];
+  if (!key) return;
+  let val = dtBase[key] + delta;
+  const lim = limits[key];
+  if (val < lim.min) val = lim.max;
+  if (val > lim.max) val = lim.min;
+  dtBase[key] = val;
+  renderDateTimeEditor();
+}
+
+/* ===== МУЗЫКА (плеер) ===== */
+const audioEl = document.getElementById('audioEl');
+let currentTrackIndex = -1;
+let isPlaying = false;
+
+function loadTrack(index, autoplay) {
+  if (index < 0 || index >= MUSIC_TRACKS.length) return;
+  const t = MUSIC_TRACKS[index];
+  currentTrackIndex = index;
+  audioEl.src = safeSrc(t.file);
+  if (autoplay) {
+    audioEl.play().then(() => {
+      isPlaying = true;
+      if (state.focus === 'z' || state.focus === 'z-list') renderLevel3();
+    }).catch(err => {
+      console.warn('Ошибка воспроизведения:', err, '— проверь путь', t.file);
+      isPlaying = false;
+    });
+  }
+}
+
+function togglePlay() {
+  if (currentTrackIndex === -1) {
+    if (MUSIC_TRACKS.length) loadTrack(0, true);
+    return;
+  }
+  if (audioEl.paused) {
+    audioEl.play().then(() => {
+      isPlaying = true;
+      if (state.focus === 'z' || state.focus === 'z-list') renderLevel3();
+    });
+  } else {
+    audioEl.pause();
+    isPlaying = false;
+    if (state.focus === 'z' || state.focus === 'z-list') renderLevel3();
+  }
+}
+
+function playNext() {
+  if (!MUSIC_TRACKS.length) return;
+  const next = (currentTrackIndex + 1) % MUSIC_TRACKS.length;
+  loadTrack(next, true);
+}
+
+audioEl.addEventListener('ended', () => playNext());
+
+/* ===== ПРОСМОТР ФОТО ===== */
+const photoOverlay       = document.getElementById('photoOverlay');
+const photoViewerImage   = document.getElementById('photoViewerImage');
+const photoViewerTitle   = document.getElementById('photoViewerTitle');
+const photoViewerCounter = document.getElementById('photoViewerCounter');
+const photoViewerPrev    = document.getElementById('photoViewerPrev');
+const photoViewerNext    = document.getElementById('photoViewerNext');
+const photoViewerClose   = document.getElementById('photoViewerClose');
+
+let currentPhotoIndex = -1;
+let photoViewerActive = false;
+
+function renderPhotoViewer() {
+  const photo = PHOTO_LIBRARY[currentPhotoIndex];
+  if (!photo) return;
+
+  photoViewerImage.classList.remove('photo-portrait', 'photo-landscape');
+  photoViewerImage.style.opacity = '0';
+  photoViewerImage.src = safeSrc(photo.file);
+  photoViewerImage.alt = photo.name;
+  photoViewerTitle.textContent = photo.name;
+  photoViewerCounter.textContent = `${currentPhotoIndex + 1} / ${PHOTO_LIBRARY.length}`;
+
+  // Соседние кадры заранее загружаются, поэтому листание не мигает.
+  [-1, 1].forEach((step) => {
+    const neighborIndex = (currentPhotoIndex + step + PHOTO_LIBRARY.length) % PHOTO_LIBRARY.length;
+    const preloadImage = new Image();
+    preloadImage.src = safeSrc(PHOTO_LIBRARY[neighborIndex].file);
+  });
+}
+
+function updatePhotoOrientation() {
+  if (!photoViewerImage.naturalWidth || !photoViewerImage.naturalHeight) return;
+  const isPortrait = photoViewerImage.naturalHeight > photoViewerImage.naturalWidth;
+  photoViewerImage.classList.toggle('photo-portrait', isPortrait);
+  photoViewerImage.classList.toggle('photo-landscape', !isPortrait);
+  photoViewerImage.style.opacity = '1';
+}
+
+function openPhotoViewer(index) {
+  if (index < 0 || index >= PHOTO_LIBRARY.length) return;
+  currentPhotoIndex = index;
+  photoViewerActive = true;
+  hideVideoPreview();
+  renderPhotoViewer();
+  photoOverlay.classList.add('active');
+  photoOverlay.setAttribute('aria-hidden', 'false');
+  requestAnimationFrame(() => photoViewerClose.focus({ preventScroll: true }));
+}
+
+function changePhoto(step) {
+  if (!photoViewerActive || !PHOTO_LIBRARY.length) return;
+  currentPhotoIndex = (currentPhotoIndex + step + PHOTO_LIBRARY.length) % PHOTO_LIBRARY.length;
+  renderPhotoViewer();
+}
+
+function closePhotoViewer() {
+  if (!photoViewerActive) return;
+  photoOverlay.classList.remove('active');
+  photoOverlay.setAttribute('aria-hidden', 'true');
+  photoViewerImage.removeAttribute('src');
+  photoViewerImage.alt = '';
+  currentPhotoIndex = -1;
+  photoViewerActive = false;
+  requestAnimationFrame(() => document.body.focus({ preventScroll: true }));
+}
+
+photoViewerPrev.addEventListener('click', () => changePhoto(-1));
+photoViewerNext.addEventListener('click', () => changePhoto(1));
+photoViewerClose.addEventListener('click', closePhotoViewer);
+photoViewerImage.addEventListener('load', updatePhotoOrientation);
+photoOverlay.addEventListener('click', (event) => {
+  if (event.target === photoOverlay) closePhotoViewer();
+});
+
+/* ===== ВИДЕОПЛЕЕР ===== */
+const videoOverlay  = document.getElementById('videoOverlay');
+const videoEl       = document.getElementById('videoEl');
+const videoControls = document.getElementById('videoControls');
+const vcTitle       = document.getElementById('vcTitle');
+const vcCurrent     = document.getElementById('vcCurrent');
+const vcTotal       = document.getElementById('vcTotal');
+const vcFill        = document.getElementById('vcFill');
+const vcPlayPause   = document.getElementById('vcPlayPause');
+
+let currentVideoIndex = -1;
+let videoPlayerActive = false;
+let videoControlsTimer = null;
+
+function fmtTime(seconds) {
+  if (!isFinite(seconds)) return '00:00';
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  const pad = (n) => String(n).padStart(2, '0');
+  if (h > 0) return `${pad(h)}:${pad(m)}:${pad(s)}`;
+  return `${pad(m)}:${pad(s)}`;
+}
+
+function openVideoPlayer(index) {
+  if (index < 0 || index >= VIDEO_LIBRARY.length) return;
+  const v = VIDEO_LIBRARY[index];
+  currentVideoIndex = index;
+  videoPlayerActive = true;
+  hideVideoPreview();
+  videoEl.src = safeSrc(v.file);
+  vcTitle.textContent = v.name;
+  videoOverlay.classList.add('active');
+  showVideoControls(true);
+
+  videoEl.play().then(() => {
+    vcPlayPause.textContent = '❚❚';
+    if (state.focus === 'z' || state.focus === 'z-list') renderLevel3();
+  }).catch(err => {
+    console.warn('Ошибка воспроизведения видео:', err, '— проверь путь', v.file);
+  });
+}
+
+function closeVideoPlayer() {
+  videoEl.pause();
+  videoEl.removeAttribute('src');
+  videoEl.load();
+  videoOverlay.classList.remove('active');
+  videoPlayerActive = false;
+  currentVideoIndex = -1;
+  clearTimeout(videoControlsTimer);
+  updateVideoPreview();
+}
+
+function toggleVideoPlay() {
+  if (!videoPlayerActive) return;
+  if (videoEl.paused) {
+    videoEl.play();
+    vcPlayPause.textContent = '❚❚';
+  } else {
+    videoEl.pause();
+    vcPlayPause.textContent = '▶';
+  }
+  showVideoControls(true);
+}
+
+function seekVideo(delta) {
+  if (!videoPlayerActive || !isFinite(videoEl.duration)) return;
+  videoEl.currentTime = Math.max(0, Math.min(videoEl.duration, videoEl.currentTime + delta));
+  showVideoControls(true);
+}
+
+function showVideoControls(autoHide) {
+  videoControls.classList.add('visible');
+  clearTimeout(videoControlsTimer);
+  if (autoHide) {
+    videoControlsTimer = setTimeout(() => {
+      if (videoPlayerActive && !videoEl.paused) {
+        videoControls.classList.remove('visible');
+      }
+    }, 3000);
+  }
+}
+
+videoEl.addEventListener('timeupdate', () => {
+  if (!videoPlayerActive) return;
+  vcCurrent.textContent = fmtTime(videoEl.currentTime);
+  if (isFinite(videoEl.duration) && videoEl.duration > 0) {
+    vcFill.style.width = ((videoEl.currentTime / videoEl.duration) * 100) + '%';
+  }
+});
+videoEl.addEventListener('loadedmetadata', () => {
+  vcTotal.textContent = fmtTime(videoEl.duration);
+});
+videoEl.addEventListener('play', () => { vcPlayPause.textContent = '❚❚'; });
+videoEl.addEventListener('pause', () => {
+  vcPlayPause.textContent = '▶';
+  showVideoControls(false);
+});
+videoEl.addEventListener('ended', () => { closeVideoPlayer(); });
+
+vcPlayPause.addEventListener('click', toggleVideoPlay);
+document.getElementById('vcRewind').addEventListener('click', () => seekVideo(-10));
+document.getElementById('vcForward').addEventListener('click', () => seekVideo(10));
+document.getElementById('vcStop').addEventListener('click', closeVideoPlayer);
+
+videoEl.addEventListener('click', () => {
+  if (videoControls.classList.contains('visible')) videoControls.classList.remove('visible');
+  else showVideoControls(true);
+});
+
+/* ===== ИГРОВОЙ ОВЕРЛЕЙ ===== */
+const gameOverlay = document.getElementById('gameOverlay');
+const gameFrame   = document.getElementById('gameFrame');
+const gameExitBtn = document.getElementById('gameExitBtn');
+const appError    = document.getElementById('appError');
+
+let currentGameIndex = -1;
+let gamePlayerActive = false;
+
+function openGame(index) {
+  if (index < 0 || index >= GAME_LIBRARY.length) return;
+  const g = GAME_LIBRARY[index];
+  currentGameIndex = index;
+  gamePlayerActive = true;
+  gameExitBtn.classList.remove('app-has-back');
+  hideVideoPreview();
+  const gameUrl = new URL(g.file, location.href);
+  gameUrl.searchParams.set('xmbRun', String(Date.now()));
+  gameFrame.src = gameUrl.href;
+  gameOverlay.classList.add('active');
+  setTimeout(attachGameKeyHandler, 300);
+}
+
+function openApp(file) {
+  currentGameIndex = -1;
+  gamePlayerActive = true;
+  gameExitBtn.classList.remove('app-has-back');
+  hideVideoPreview();
+  appError.hidden = true;
+  const appUrl = new URL(file, location.href);
+  appUrl.searchParams.set('xmbNow', String(getXmbNow().getTime()));
+  gameFrame.src = appUrl.href;
+  gameOverlay.classList.add('active');
+  setTimeout(attachGameKeyHandler, 300);
+  // чёрный экран без объяснений хуже ошибки: на http(s) проверяем, что файл вообще есть
+  if (/^https?:/.test(location.protocol)) {
+    fetch(safeSrc(file), { method: 'HEAD' }).then(r => {
+      if (!r.ok) throw new Error(r.status);
+    }).catch(err => {
+      appError.textContent = 'Не удалось открыть «' + file + '» (' + err.message + '). Проверь, что файл лежит по этому пути рядом с index.html.';
+      appError.hidden = false;
+    });
+  }
+}
+
+function closeGame() {
+  gameOverlay.classList.remove('active');
+  gameFrame.src = 'about:blank';
+  gamePlayerActive = false;
+  gameExitBtn.classList.remove('app-has-back');
+  currentGameIndex = -1;
+  if (state.focus === 'z' || state.focus === 'z-list') renderLevel3();
+  else updateVideoPreview();
+  requestAnimationFrame(() => document.body.focus({ preventScroll: true }));
+}
+
+function attachGameKeyHandler() {
+  try {
+    const doc = gameFrame.contentDocument;
+    if (!doc || doc.__xmbHandlerAttached) return;
+    doc.__xmbHandlerAttached = true;
+    doc.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeGame();
+      }
+    });
+  } catch(e) {}
+}
+
+function syncAppContext() {
+  if (!gamePlayerActive || !gameFrame.contentWindow) return;
+  gameFrame.contentWindow.postMessage({
+    type: 'xmb-context',
+    now: getXmbNow().getTime(),
+    timezone: settings.timezone
+  }, '*');
+}
+
+gameFrame.addEventListener('load', () => {
+  attachGameKeyHandler();
+  syncAppContext();
+  if (gamePlayerActive) gameFrame.focus();
+});
+/* приложения во фрейме (магазин) просят выйти по Esc через postMessage — работает и когда страница открыта с file:// */
+window.addEventListener('message', (e) => {
+  if (e.data && e.data.type === 'xmb-exit' && e.source === gameFrame.contentWindow && gamePlayerActive) closeGame();
+});
+gameExitBtn.addEventListener('click', closeGame);
+
+/* ===== Общее обновление ===== */
+function updateAll() {
+  document.body.classList.remove('focus-x','focus-y','focus-z');
+  if (state.focus === 'x') document.body.classList.add('focus-x');
+  else if (state.focus === 'y') document.body.classList.add('focus-y');
+  else document.body.classList.add('focus-z');
+
+  document.querySelectorAll('.category').forEach((el, idx) => {
+    el.classList.toggle('focused', idx === state.catIndex);
+  });
+  renderSubmenu();
+  positionSubmenu();
+
+  if (state.focus === 'z' || state.focus === 'z-list') {
+    level3Column.style.visibility = 'visible';
+    dtEditor.style.visibility = 'hidden';
+    positionLevel3();
+  } else if (state.focus === 'z-edit') {
+    level3Column.style.visibility = 'hidden';
+    positionDateTimeEditor();
+  } else {
+    level3Column.style.visibility = 'hidden';
+    dtEditor.style.visibility = 'hidden';
+  }
+  updateVideoPreview();
+}
+
+function switchCategory(newIdx) {
+  if (newIdx < 0 || newIdx >= categories.length) return;
+  if (gamePlayerActive) closeGame();
+  state.itemIndexPerCategory[categories[state.catIndex].id] = state.itemIndex;
+  state.catIndex = newIdx;
+  state.itemIndex = state.itemIndexPerCategory[categories[newIdx].id] || 0;
+  state.focus = 'x';
+  level3Column.style.visibility = 'hidden';
+  dtEditor.style.visibility = 'hidden';
+  hideVideoPreview();
+  updateAll();
+}
+
+/* ===== Клавиатура ===== */
+document.addEventListener('keydown', (e) => {
+  const key = e.key;
+  const lower = key.length === 1 ? key.toLowerCase() : key;
+  const isConfirm = key === 'Enter' || lower === 'x';
+  const isBack    = key === 'Escape' || lower === 'o';
+
+  if (welcomeActive) {
+    if (isBack) {
+      e.preventDefault();
+      closeWelcome('network');
+    } else if (isConfirm) {
+      e.preventDefault();
+      openPortfolioFromWelcome();
+    }
+    return;
+  }
+
+  if (noticeOverlay.classList.contains('active')) {
+    if (!socialLinks.hidden && (key === 'ArrowUp' || key === 'ArrowDown')) {
+      e.preventDefault();
+      const currentIndex = Math.max(0, socialLinkItems.indexOf(document.activeElement));
+      const direction = key === 'ArrowDown' ? 1 : -1;
+      const nextIndex = (currentIndex + direction + socialLinkItems.length) % socialLinkItems.length;
+      socialLinkItems[nextIndex].focus({ preventScroll: true });
+    } else if (isBack) {
+      e.preventDefault();
+      closeNotice();
+    } else if (isConfirm && !document.activeElement.closest?.('.social-link')) {
+      e.preventDefault();
+      closeNotice();
+    }
+    return;
+  }
+
+  /* ===== РЕЖИМ ПРОСМОТРА ФОТО ===== */
+  if (photoViewerActive) {
+    if (key === 'ArrowLeft') {
+      e.preventDefault();
+      changePhoto(-1);
+    } else if (key === 'ArrowRight') {
+      e.preventDefault();
+      changePhoto(1);
+    } else if (isBack) {
+      e.preventDefault();
+      closePhotoViewer();
+    }
+    return;
+  }
+
+  /* ===== РЕЖИМ ИГРЫ ===== */
+  if (gamePlayerActive) {
+    if (isBack) {
+      e.preventDefault();
+      closeGame();
+    }
+    return;
+  }
+
+  /* ===== РЕЖИМ ВИДЕО ===== */
+  if (videoPlayerActive) {
+    if (key === 'ArrowLeft') {
+      e.preventDefault(); seekVideo(-10);
+    } else if (key === 'ArrowRight') {
+      e.preventDefault(); seekVideo(10);
+    } else if (key === 'ArrowUp') {
+      e.preventDefault(); showVideoControls(false);
+    } else if (key === 'ArrowDown') {
+      e.preventDefault(); videoControls.classList.remove('visible');
+    } else if (isConfirm) {
+      e.preventDefault(); toggleVideoPlay();
+    } else if (isBack) {
+      e.preventDefault(); closeVideoPlayer();
+    }
+    return;
+  }
+
+  if (state.focus === 'z-edit') {
+    if (key === 'ArrowLeft') {
+      e.preventDefault();
+      dtFieldIndex = Math.max(0, dtFieldIndex - 1);
+      renderDateTimeEditor();
+    } else if (key === 'ArrowRight') {
+      e.preventDefault();
+      dtFieldIndex = Math.min(4, dtFieldIndex + 1);
+      renderDateTimeEditor();
+    } else if (key === 'ArrowUp') {
+      e.preventDefault(); changeDtField(1);
+    } else if (key === 'ArrowDown') {
+      e.preventDefault(); changeDtField(-1);
+    } else if (isConfirm) {
+      e.preventDefault(); applyDateTimeEditor();
+    } else if (isBack) {
+      e.preventDefault(); closeDateTimeEditor();
+    }
+    return;
+  }
+
+  if (state.focus === 'z' || state.focus === 'z-list') {
+    const cat = categories[state.catIndex];
+    const menu = level3Menus[cat.items[state.itemIndex]];
+
+    if (key === 'ArrowUp') {
+      e.preventDefault();
+      if (state.focus === 'z') {
+        zItemIndex = Math.max(0, zItemIndex - 1);
+        renderLevel3(); positionLevel3();
+      } else {
+        zListIndex = Math.max(0, zListIndex - 1);
+        renderLevel3(); positionLevel3();
+      }
+    } else if (key === 'ArrowDown') {
+      e.preventDefault();
+      if (state.focus === 'z') {
+        zItemIndex = Math.min(menu.length - 1, zItemIndex + 1);
+        renderLevel3(); positionLevel3();
+      } else {
+        const item = menu[zItemIndex];
+        zListIndex = Math.min(item.options.length - 1, zListIndex + 1);
+        renderLevel3(); positionLevel3();
+      }
+    } else if (state.focus === 'z-list' && (key === 'PageUp' || key === 'PageDown')) {
+      e.preventDefault();
+      const item = menu[zItemIndex];
+      const direction = key === 'PageDown' ? 10 : -10;
+      zListIndex = Math.max(0, Math.min(item.options.length - 1, zListIndex + direction));
+      renderLevel3(); positionLevel3();
+    } else if (state.focus === 'z-list' && (key === 'Home' || key === 'End')) {
+      e.preventDefault();
+      const item = menu[zItemIndex];
+      zListIndex = key === 'End' ? item.options.length - 1 : 0;
+      renderLevel3(); positionLevel3();
+    } else if (isConfirm) {
+      e.preventDefault();
+      if (state.focus === 'z') {
+        activateLevel3Item();
+      } else {
+        const item = menu[zItemIndex];
+        item.set(item.options[zListIndex]);
+        saveSettings(); updateClock();
+        zMode = 'items'; state.focus = 'z';
+        renderLevel3(); positionLevel3(); updateAll();
+      }
+    } else if (isBack || key === 'ArrowLeft') {
+      e.preventDefault();
+      if (state.focus === 'z-list') {
+        state.focus = 'z'; zMode = 'items';
+        renderLevel3(); positionLevel3(); updateAll();
+      } else {
+        closeLevel3();
+      }
+    }
+    return;
+  }
+
+  if (state.focus === 'y') {
+    if (key === 'ArrowUp') {
+      e.preventDefault();
+      if (state.itemIndex > 0) {
+        state.itemIndex--;
+        state.itemIndexPerCategory[categories[state.catIndex].id] = state.itemIndex;
+        updateAll();
+      } else {
+        state.focus = 'x'; updateAll();
+      }
+    } else if (key === 'ArrowDown') {
+      e.preventDefault();
+      const cat = categories[state.catIndex];
+      if (state.itemIndex < cat.items.length - 1) {
+        state.itemIndex++;
+        state.itemIndexPerCategory[categories[state.catIndex].id] = state.itemIndex;
+        updateAll();
+      }
+    } else if (key === 'ArrowLeft') {
+      e.preventDefault();
+      switchCategory(state.catIndex - 1);
+    } else if (key === 'ArrowRight') {
+      e.preventDefault();
+      switchCategory(state.catIndex + 1);
+    } else if (isConfirm) {
+      e.preventDefault();
+      const yLabel = categories[state.catIndex].items[state.itemIndex];
+      activateYItem(yLabel);
+    } else if (isBack) {
+      e.preventDefault();
+      state.focus = 'x'; updateAll();
+    }
+    return;
+  }
+
+  if (key === 'ArrowLeft') {
+    e.preventDefault(); switchCategory(state.catIndex - 1);
+  } else if (key === 'ArrowRight') {
+    e.preventDefault(); switchCategory(state.catIndex + 1);
+  } else if (key === 'ArrowDown') {
+    e.preventDefault();
+    if (categories[state.catIndex].items.length > 0) {
+      state.focus = 'y'; updateAll();
+    }
+  } else if (isConfirm) {
+    e.preventDefault();
+    if (categories[state.catIndex].id === 'music' && currentTrackIndex !== -1) {
+      togglePlay();
+    }
+  } else if (isBack) {
+    e.preventDefault(); switchCategory(0);
+  }
+});
+
+/* ===== Волны ===== */
+const canvas = document.getElementById('waveCanvas');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resizeCanvas() { W = canvas.width = innerWidth; H = canvas.height = innerHeight; }
+resizeCanvas();
+addEventListener('resize', () => {
+  resizeCanvas();
+  positionSubmenu();
+  if (state.focus === 'z' || state.focus === 'z-list') positionLevel3();
+  else if (state.focus === 'z-edit') positionDateTimeEditor();
+});
+
+const waveLayers = [
+  { amp:46, wavelength:620, speed:0.006, yRatio:0.42, alpha:0.45 },
+  { amp:60, wavelength:480, speed:0.010, yRatio:0.52, alpha:0.38 },
+  { amp:34, wavelength:380, speed:0.014, yRatio:0.62, alpha:0.25 },
+];
+let t = 0;
+
+/* ===== ЧАСТИЦЫ (PS3-style, пыль вдоль волн) ===== */
+const particles = [];
+const PARTICLE_COUNT = 250;                 // пыли нужно много
+let lastFrameTime = performance.now();
+
+const glowCache = new Map();
+function getGlowSprite(rgb, radius = 16) {
+  const key = rgb.join(',');
+  if (glowCache.has(key)) return glowCache.get(key);
+
+  const c = document.createElement('canvas');
+  c.width = c.height = radius * 2;
+  const g = c.getContext('2d');
+  const [r, gg, b] = rgb;
+
+  const grad = g.createRadialGradient(radius, radius, 0, radius, radius, radius);
+  grad.addColorStop(0,    'rgba(255,255,255,0.9)');
+  grad.addColorStop(0.25, `rgba(${r},${gg},${b},0.55)`);
+  grad.addColorStop(0.6,  `rgba(${r},${gg},${b},0.18)`);
+  grad.addColorStop(1,    `rgba(${r},${gg},${b},0)`);
+
+  g.fillStyle = grad;
+  g.fillRect(0, 0, radius * 2, radius * 2);
+  glowCache.set(key, c);
+  return c;
+}
+
+function spawnParticle(scatter) {
+  const layer = waveLayers[Math.floor(Math.random() * waveLayers.length)];
+  const dir = Math.random() < 0.5 ? -1 : 1;
+  return {
+    layer,                                  // ← привязка к конкретной волне
+    x: scatter ? Math.random() * W : (dir > 0 ? -30 : W + 30),
+    yOffset: (Math.random() - 0.5) * 26,    // ±13 px вокруг линии волны
+    driftX: dir * (1 + Math.random() * 3),  // 1–4 px/s — очень медленно
+    radius: 0.2 + Math.pow(Math.random(), 2) * 1.0,
+    alpha:  0.18 + Math.random() * 0.32,
+    phase:  Math.random() * Math.PI * 2,
+    wobbleAmp:   1 + Math.random() * 3,
+    wobbleSpeed: 0.4 + Math.random() * 0.9,
+    twinkleSpeed: 1.0 + Math.random() * 2.0,
+  };
+}
+for (let i = 0; i < PARTICLE_COUNT; i++) particles.push(spawnParticle(true));
+
+function updateAndDrawParticles(dt, rgb) {
+  const sprite = getGlowSprite(rgb, 16);
+  const time = performance.now() / 1000;
+
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+
+  for (let i = 0; i < particles.length; i++) {
+    const p = particles[i];
+
+    // горизонтальный дрейф — медленный, чтобы «пылинка ехала по гребню»
+    p.x += p.driftX * dt;
+
+    // респавн с противоположной стороны (в невидимой зоне за краем экрана)
+    if (p.x < -40) {
+      const np = spawnParticle(false);
+      np.x = W + 30;
+      np.driftX = -(1 + Math.random() * 3);
+      particles[i] = np;
+      continue;
+    }
+    if (p.x > W + 40) {
+      const np = spawnParticle(false);
+      np.x = -30;
+      np.driftX = 1 + Math.random() * 3;
+      particles[i] = np;
+      continue;
+    }
+
+    // Y считается ТОЙ ЖЕ формулой, что и у волны
+    const layer = p.layer;
+    const waveY = H * layer.yRatio
+                + Math.sin((p.x / layer.wavelength) + t * layer.speed) * layer.amp;
+
+    // микро-wobble вокруг линии — чтобы не «шнурок»
+    p.phase += p.wobbleSpeed * dt;
+    const drawY = waveY + p.yOffset + Math.sin(p.phase) * p.wobbleAmp;
+
+    // плавно гаснет у краёв экрана
+    const edge = Math.min(1, Math.min(p.x + 40, W + 40 - p.x) / 60);
+    if (edge <= 0.01) continue;
+
+    const twinkle = 0.55 + 0.45 * Math.sin(time * p.twinkleSpeed + p.phase);
+    const size = p.radius * 7;
+
+    ctx.globalAlpha = p.alpha * twinkle * edge;
+    ctx.drawImage(sprite, p.x - size, drawY - size, size * 2, size * 2);
+  }
+
+  ctx.restore();
+}
+
+function makeThemeShade(rgb, multiplier, lift = 0) {
+  return rgb.map(channel => Math.max(0, Math.min(255, Math.round(channel * multiplier + lift))));
+}
+
+function drawWaves(now) {
+  now = now ?? performance.now();
+  const dt = Math.min(0.05, (now - lastFrameTime) / 1000);
+  lastFrameTime = now;
+
+  if (!settings.wallpaper) {
+    ctx.fillStyle = '#020611';
+    ctx.fillRect(0, 0, W, H);
+    requestAnimationFrame(drawWaves);
+    return;
+  }
+
+  const [r, g, b] = getCurrentWaveRGB();
+  const topShade = makeThemeShade([r, g, b], 0.42, 8);
+  const middleShade = makeThemeShade([r, g, b], 0.16, 2);
+  const bottomShade = makeThemeShade([r, g, b], 0.30, 2);
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0,    `rgb(${topShade.join(', ')})`);
+  bg.addColorStop(0.55, `rgb(${middleShade.join(', ')})`);
+  bg.addColorStop(1,    `rgb(${bottomShade.join(', ')})`);
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  // Волны — как в оригинале (нет только в «Классической»)
+  if (settings.theme !== 'Классическая') {
+    const wr = Math.min(255, r + 30);
+    const wg = Math.min(255, g + 30);
+    const wb = Math.min(255, b + 30);
+    waveLayers.forEach(layer => {
+      ctx.beginPath();
+      const baseY = H * layer.yRatio;
+      ctx.moveTo(0, baseY);
+      for (let x = 0; x <= W; x += 6) {
+        const y = baseY + Math.sin((x / layer.wavelength) + t * layer.speed) * layer.amp;
+        ctx.lineTo(x, y);
+      }
+      ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath();
+      ctx.fillStyle = `rgba(${wr}, ${wg}, ${wb}, ${layer.alpha})`;
+      ctx.fill();
+    });
+    t += 1;
+  }
+
+  // Частицы — ТОЛЬКО в «Оригинальной»
+  if (settings.theme === 'Оригинальная') {
+    updateAndDrawParticles(dt, [r, g, b]);
+  }
+
+  requestAnimationFrame(drawWaves);
+}
+requestAnimationFrame(drawWaves);
+
+/* ===== SCREENSAVER / IDLE ===== */
+let lastActivity = Date.now();
+let screensaverActive = false;
+let powerMode = 'awake';
+
+function idleMinutes(value) {
+  if (!value || value === 'Выкл') return Infinity;
+  const mins = parseInt(value, 10);
+  return Number.isFinite(mins) && mins > 0 ? mins : Infinity;
+}
+
+function setPowerMode(mode) {
+  powerMode = mode;
+  powerOverlay.classList.toggle('dim', mode === 'dim');
+  powerOverlay.classList.toggle('sleep', mode === 'sleep');
+  powerOverlay.setAttribute('aria-hidden', mode === 'awake' ? 'true' : 'false');
+  powerMessage.textContent = mode === 'sleep' ? 'Режим ожидания · нажмите любую клавишу' : '';
+}
+
+function resetIdle() {
+  lastActivity = Date.now();
+  if (powerMode !== 'awake') setPowerMode('awake');
+  if (screensaverActive) {
+    screensaverActive = false;
+    screensaverEl.classList.remove('active');
+    updateVideoPreview();
+  }
+}
+
+function checkIdle() {
+  if (videoPlayerActive) return;
+  if (gamePlayerActive) return;
+  const idleMs = Date.now() - lastActivity;
+
+  if (idleMs >= idleMinutes(settings.autoSleep) * 60 * 1000) {
+    if (screensaverActive) {
+      screensaverActive = false;
+      screensaverEl.classList.remove('active');
+    }
+    if (powerMode !== 'sleep') {
+      setPowerMode('sleep');
+      hideVideoPreview();
+    }
+    return;
+  }
+
+  if (idleMs >= idleMinutes(settings.backlight) * 60 * 1000) {
+    if (powerMode !== 'dim') setPowerMode('dim');
+  } else if (powerMode !== 'awake') {
+    setPowerMode('awake');
+  }
+
+  if (idleMs >= idleMinutes(settings.screensaver) * 60 * 1000 && !screensaverActive) {
+    screensaverActive = true;
+    screensaverEl.classList.add('active');
+    hideVideoPreview();
+  }
+}
+
+function wakeFromIdle(e) {
+  const wasIdle = screensaverActive || powerMode !== 'awake';
+  resetIdle();
+  if (wasIdle && e.type === 'keydown') {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+  }
+}
+
+document.addEventListener('keydown', wakeFromIdle, true);
+document.addEventListener('pointerdown', wakeFromIdle, true);
+document.addEventListener('mousemove', wakeFromIdle, true);
+setInterval(checkIdle, 5000);
+
+/* ===== Старт ===== */
+topBar.classList.toggle('hidden', !settings.panelDisplay);
+
+const preloadSrcs = [...Object.values(ICONS), 'icons/memry.png'];
+let loadedCount = 0;
+preloadSrcs.forEach(src => {
+  const img = new Image();
+  img.onload = img.onerror = () => {
+    loadedCount++;
+    if (loadedCount === preloadSrcs.length) {
+      renderCategories();
+      updateAll();
+    }
+  };
+  img.src = src;
+});
+</script>
+</body>
+</html>
