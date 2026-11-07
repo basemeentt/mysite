@@ -1,0 +1,29 @@
+.mobile-product-name { display: none; }
+@media (max-width: 900px) {
+  body { height: 100dvh; }
+  button, a { touch-action: manipulation; }
+  .embedded .mute { right: 76px; }
+  .world { overflow-y: auto; overscroll-behavior: contain; }
+  .world.approach { transform: none; }
+  .card-wrap { padding: max(12px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom)); }
+  .card { max-height: calc(100dvh - 32px); overscroll-behavior: contain; }
+  .card .pic { padding: 16px; min-height: 0; }
+  .card .pic .bag { width: min(100%, 200px); padding: 0; }
+  .card .info { padding: 20px; }
+  .card h2 { font-size: 22px; }
+  .actions { flex-direction: column; }
+  .actions .btn { width: 100%; min-height: 44px; text-align: center; }
+  .timebox { left: 12px; bottom: max(12px, env(safe-area-inset-bottom)); }
+  .timepanel { max-width: calc(100vw - 24px); gap: 8px; }
+  .timepanel input[type=range] { min-width: 0; width: 32vw; }
+  .gate { padding: 24px; }
+  .gate h1 { font-size: clamp(32px,10vw,56px); }
+}
+@media (max-width: 900px) and (orientation: portrait) {
+  /* Enlarge the original machine; crop only the street on its left. */
+  :root { --scene-unit: 2vw; }
+  .world { display: block; padding-block: max(56px, calc((100dvh - 112.5vw) / 2)); }
+  .scene { width: 200vw; height: 112.5vw; margin-left: -74vw; flex: none; }
+  .tag { font-size: clamp(8px, 1.6vw, 13px); }
+  .lcd { font-size: clamp(8px, 2vw, 13px); }
+}
