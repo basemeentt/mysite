@@ -2,6 +2,8 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="stylesheet" href="mobile.css">
 <title>XMB PSP</title>
 <style>
   :root {
@@ -1463,7 +1465,7 @@ const noticeClose   = document.getElementById('noticeClose');
 const socialLinks   = document.getElementById('socialLinks');
 const socialLinkItems = [...socialLinks.querySelectorAll('.social-link')];
 
-const UI_SCALE = parseFloat(
+let UI_SCALE = parseFloat(
   getComputedStyle(document.documentElement).getPropertyValue('--ui-scale')
 ) || 1;
 
@@ -1639,7 +1641,13 @@ function renderCategories() {
       <div class="icon-wrap"><img src="${ICONS[cat.icon]}" alt=""></div>
       <div class="label">${cat.label}</div>`;
     el.addEventListener('click', () => {
-      if (state.catIndex === idx) return;
+      if (state.catIndex === idx) {
+        if (state.focus.startsWith('z')) {
+          if (state.focus === 'z-edit') closeDateTimeEditor();
+          closeLevel3();
+        } else { state.focus = 'y'; updateAll(); }
+        return;
+      }
       switchCategory(idx);
     });
     categoryRow.appendChild(el);
@@ -1677,6 +1685,13 @@ function renderSubmenu() {
 
 /* ===== Позиция Y ===== */
 function positionSubmenu() {
+  if (matchMedia('(max-width: 900px)').matches) {
+    categoryRow.style.transform = 'none';
+    submenuColumn.style.visibility = 'visible';
+    submenuTrack.querySelectorAll('.submenu-item').forEach(el => el.style.transform = 'none');
+    categoryRow.querySelector('.category.focused')?.scrollIntoView({block:'nearest', inline:'nearest'});
+    return;
+  }
   const activeCatEl = categoryRow.querySelectorAll('.category')[state.catIndex];
   if (!activeCatEl) return;
   const iconEl = activeCatEl.querySelector('.icon-wrap');
@@ -2098,6 +2113,10 @@ function closeLevel3() {
 }
 
 function positionLevel3() {
+  if (matchMedia('(max-width: 900px)').matches) {
+    level3Track.querySelector('.focused')?.scrollIntoView({block:'nearest'});
+    return;
+  }
   const activeYEl = submenuTrack.querySelectorAll('.submenu-item')[state.itemIndex];
   if (!activeYEl) return;
 
@@ -2884,7 +2903,36 @@ const ctx = canvas.getContext('2d');
 let W, H;
 function resizeCanvas() { W = canvas.width = innerWidth; H = canvas.height = innerHeight; }
 resizeCanvas();
+// Native vertical scrolling stays with lists; horizontal gestures navigate levels.
+let touchStart = null;
+let suppressTapUntil = 0;
+document.addEventListener('touchstart', e => {
+  touchStart = e.touches.length === 1 ? {x:e.touches[0].clientX, y:e.touches[0].clientY, target:e.target} : null;
+}, {passive:true});
+document.addEventListener('touchcancel', () => { touchStart = null; }, {passive:true});
+document.addEventListener('touchend', e => {
+  const start = touchStart; touchStart = null;
+  if (!start || !e.changedTouches.length || e.touches.length) return;
+  const dx=e.changedTouches[0].clientX-start.x, dy=e.changedTouches[0].clientY-start.y;
+  if (Math.max(Math.abs(dx),Math.abs(dy)) < 40) return;
+  suppressTapUntil = performance.now()+400;
+  if (!introFinished || welcomeActive || gamePlayerActive || start.target.closest('input,select,a,.notice-overlay,.xmb-wrapper,.vc-timeline')) return;
+  const horizontal=Math.abs(dx)>Math.abs(dy)*1.3;
+  let key=null;
+  if (photoViewerActive) key=horizontal?(dx<0?'ArrowRight':'ArrowLeft'):(dy>70?'Escape':null);
+  else if (videoPlayerActive) key=!horizontal&&dy>70?'Escape':null;
+  else if (state.focus==='z-edit') {
+    if (horizontal && dx>0) { applyDateTimeEditor(); return; }
+    if (!horizontal) key=dy<0?'ArrowUp':'ArrowDown';
+  } else if (horizontal) key=state.focus.startsWith('z')?(dx>0?'Escape':null):(dx<0?'ArrowRight':'ArrowLeft');
+  else if (!start.target.closest('.submenu-column,.level3-column')) key=dy<0?'ArrowDown':'ArrowUp';
+  if (key) document.dispatchEvent(new KeyboardEvent('keydown',{key,bubbles:true,cancelable:true}));
+}, {passive:true});
+document.addEventListener('click', e => {
+  if (performance.now()<suppressTapUntil) { e.preventDefault(); e.stopImmediatePropagation(); }
+}, true);
 addEventListener('resize', () => {
+  UI_SCALE = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ui-scale')) || 1;
   resizeCanvas();
   positionSubmenu();
   if (state.focus === 'z' || state.focus === 'z-list') positionLevel3();
