@@ -1,5 +1,5 @@
 .mobile-product-name { display: none; }
-@media (max-width: 900px) {
+@media (max-width: 1100px) {
   body { height: 100dvh; }
   button, a { touch-action: manipulation; }
   .embedded .mute { right: 76px; }
@@ -19,7 +19,7 @@
   .gate { padding: 24px; }
   .gate h1 { font-size: clamp(32px,10vw,56px); }
 }
-@media (max-width: 900px) and (orientation: portrait) {
+@media (max-width: 1100px) and (orientation: portrait) {
   /* Enlarge the original machine; crop only the street on its left. */
   :root { --scene-unit: 2vw; }
   .world { display: block; padding-block: max(56px, calc((100dvh - 112.5vw) / 2)); }
