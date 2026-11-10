@@ -749,6 +749,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   .bag, .bag img, .tag { transition: none; }
 }
 </style>
+<link rel="stylesheet" href="mobile-store.css">
 </head>
 <body>
 <div class="world approach blurred" id="world">
@@ -1051,6 +1052,7 @@ function renderShelves() {
       <button class="slot${p.image ? ' has-image' : ''}${p.hoverVideo ? ' has-video' : ''}${isComingSoon(p) ? ' coming-soon' : ''}" type="button" data-code="${p.code}" aria-label="${esc(shelfName(p))}, код ${p.code}, ${isComingSoon(p) ? 'пока недоступно' : fmtPrice(p.price)}">
         <span class="bag">${art(p, '', true)}</span>
         <span class="tag"><b>${p.code}</b><span>${shelfPrice(p)}</span></span>
+        <span class="mobile-product-name">${esc(shelfName(p))}</span>
       </button>`).join('')}</div>`);
   }
   $('shelves').innerHTML = shelves.join('');
@@ -1192,6 +1194,26 @@ function closeCard() {
 $('cardWrap').addEventListener('click', e => { if (e.target === $('cardWrap')) closeCard(); });
 
 const EMBEDDED = window.parent !== window;
+document.body.classList.toggle('embedded', EMBEDDED);
+let backGesture = null;
+document.addEventListener('touchstart', e => {
+  backGesture = e.touches.length===1 && e.touches[0].clientX>=innerWidth-48
+    ? {x:e.touches[0].clientX,y:e.touches[0].clientY} : null;
+}, {passive:true});
+document.addEventListener('touchcancel', () => { backGesture=null; }, {passive:true});
+document.addEventListener('touchmove', e => {
+  if (!backGesture || e.touches.length!==1) { backGesture=null; return; }
+  const dx=e.touches[0].clientX-backGesture.x, dy=e.touches[0].clientY-backGesture.y;
+  if(dx < -12 && -dx>Math.abs(dy)*1.3 && e.cancelable) e.preventDefault();
+}, {passive:false});
+document.addEventListener('touchend', e => {
+  const start=backGesture; backGesture=null;
+  if(!start || e.touches.length || !e.changedTouches.length) return;
+  const dx=e.changedTouches[0].clientX-start.x, dy=e.changedTouches[0].clientY-start.y;
+  if(dx>-40 || -dx<Math.abs(dy)*1.3) return;
+  if(!$('cardWrap').hidden) closeCard();
+  else if(EMBEDDED) parent.postMessage({type:'xmb-exit'},'*');
+}, {passive:true});
 document.addEventListener('keydown', e => {
   if (e.target.matches('input, textarea')) return;
   if (!$('cardWrap').hidden) {
@@ -1219,6 +1241,10 @@ $('shelves').addEventListener('click', slotClick);
 function slotClick(e) {
   const s = e.target.closest('.slot'); if (!s || busy) return;
   code = s.dataset.code; Sound.key(); idle(); markPicked(code);
+  if (matchMedia('(max-width: 1100px)').matches) {
+    const product = PRODUCTS.find(p => String(p.code) === code);
+    if (product && !isComingSoon(product)) { busy = true; openCard(product); }
+  }
 }
 
 function playApproach() {
